@@ -1,7 +1,11 @@
 import {
+  cellCreationConflict,
+  constrainArrowCurve,
+  deleteSelections,
   exampleDocuments,
   generateSvg,
   generateXyPic,
+  isNativeParallelCell,
   validateDocument,
 } from '../lib/diagram.ts';
 
@@ -28,4 +32,93 @@ for (const [id, document] of Object.entries(exampleDocuments)) {
   console.log(
     `${id}: ok; svg=${svg.length} xy=${xy.text.length} warnings=${xy.warnings.length}`,
   );
+}
+
+const quasi = exampleDocuments.quasicategory;
+const quasiXy = generateXyPic(quasi, 'snippet').text;
+if (
+  !quasiXy.includes('\\ar@{=>}') ||
+  !quasiXy.includes('^{\\alpha}') ||
+  !quasiXy.includes('|(0.5)*{}="xyq-a1"') ||
+  !quasiXy.includes('\\POS "xyq-n2"')
+) {
+  throw new Error(
+    'quasicategory: vertex-to-edge 2-cell was not attached to a named path position',
+  );
+}
+if (
+  quasi.cells[0].sourcePath?.length !== 2 ||
+  quasi.cells[0].targetPath?.length !== 1
+) {
+  throw new Error('quasicategory: composite boundary paths were not preserved');
+}
+const withoutMiddle = deleteSelections(quasi, [{ kind: 'node', id: 'q-x1' }]);
+if (
+  withoutMiddle.cells.length !== 0 ||
+  withoutMiddle.arrows.some(
+    (arrow) => arrow.id === 'q-f' || arrow.id === 'q-g',
+  ) ||
+  !withoutMiddle.arrows.some((arrow) => arrow.id === 'q-h')
+) {
+  throw new Error(
+    'quasicategory: deleting a composite vertex did not cascade atomically',
+  );
+}
+
+const legacy = JSON.parse(JSON.stringify(exampleDocuments.twocell));
+legacy.version = 1;
+const migrated = validateDocument(legacy);
+if (
+  !migrated ||
+  migrated.version !== 2 ||
+  migrated.cells[0].sourceAnchor?.kind !== 'arrow' ||
+  migrated.cells[0].sourcePath?.[0] !== 'a-f' ||
+  migrated.cells[0].head !== 'arrow'
+) {
+  throw new Error('validator: legacy native cells were not normalized to v2');
+}
+
+const nullAnchor = JSON.parse(JSON.stringify(exampleDocuments.quasicategory));
+nullAnchor.cells[0].sourceAnchor = null;
+if (validateDocument(nullAnchor) !== null) {
+  throw new Error('validator: null anchor was accepted');
+}
+const dangling = JSON.parse(JSON.stringify(exampleDocuments.quasicategory));
+dangling.cells[0].sourceAnchor = { kind: 'node', id: 'missing' };
+if (validateDocument(dangling) !== null) {
+  throw new Error('validator: dangling anchor was accepted');
+}
+const reversedPath = JSON.parse(JSON.stringify(exampleDocuments.quasicategory));
+reversedPath.cells[0].sourcePath.reverse();
+if (validateDocument(reversedPath) !== null) {
+  throw new Error('validator: non-composable boundary path was accepted');
+}
+
+const nonMidpoint = JSON.parse(JSON.stringify(exampleDocuments.twocell));
+nonMidpoint.cells[0].sourceAnchor = { kind: 'arrow', id: 'a-f', t: 0.1 };
+nonMidpoint.cells[0].targetAnchor = { kind: 'arrow', id: 'a-g', t: 0.9 };
+nonMidpoint.cells[0].sourcePath = ['a-f'];
+nonMidpoint.cells[0].targetPath = ['a-g'];
+if (isNativeParallelCell(nonMidpoint, nonMidpoint.cells[0])) {
+  throw new Error('native predicate: off-center anchors were downgraded');
+}
+
+const nativeCurves = JSON.parse(JSON.stringify(exampleDocuments.twocell));
+nativeCurves.arrows.find((arrow) => arrow.id === 'a-g').curve = 220;
+if (constrainArrowCurve(nativeCurves, 'a-f', 220) !== 192) {
+  throw new Error('curve constraint: failed at the positive boundary');
+}
+if (
+  cellCreationConflict(
+    exampleDocuments.twocell,
+    { kind: 'arrow', id: 'a-g', t: 0.5 },
+    { kind: 'arrow', id: 'a-f', t: 0.5 },
+  ) !== 'duplicate'
+) {
+  throw new Error('cell conflict: reversed duplicate pair was not rejected');
+}
+
+const fullLatex = generateXyPic(quasi, 'latex').text;
+if (!fullLatex.includes('\\documentclass') || fullLatex.includes('\\[\n')) {
+  throw new Error('latex export: invalid nested display wrapper');
 }

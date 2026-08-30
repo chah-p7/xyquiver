@@ -28,7 +28,14 @@ import {
   Undo2,
 } from 'lucide-react';
 
-import { DiagramCanvas, type EditorTool } from '@/components/diagram-canvas';
+import {
+  DiagramCanvas,
+  canvasAnchorToCellAnchor,
+  connectionValidationError,
+  type CanvasAnchor,
+  type ConnectionMode,
+  type EditorTool,
+} from '@/components/diagram-canvas';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +51,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -64,17 +76,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   areParallel,
+  cellCreationConflict,
+  cellBoundaryPaths,
+  cellSourceAnchor,
+  cellTargetAnchor,
   cloneDocument,
-  deleteSelection,
+  constrainArrowCurve,
+  deleteSelections,
   displayTex,
   exampleDocuments,
   generateSvg,
   generateXyPic,
+  inferCellBoundaryPaths,
+  isNativeParallelCell,
   matrixAxes,
+  selectionKey,
   snapPointToMatrix,
   validateDocument,
   type ArrowId,
   type ArrowStroke,
+  type CellAnchor,
+  type CellHead,
   type DiagramArrow,
   type DiagramDocument,
   type DiagramNode,
@@ -103,6 +125,7 @@ const tools: Array<{
 ];
 
 const examples = [
+  { id: 'quasicategory', label: 'Quasi-category composition 2-simplex' },
   { id: 'showcase', label: 'Pasting of 2-cells' },
   { id: 'twocell', label: 'Native 2-cell' },
   { id: 'parallel', label: 'Parallel deformation arrows' },
@@ -171,6 +194,18 @@ function DraftInput({
   );
 }
 
+function anchorName(doc: DiagramDocument, anchor: CellAnchor | null) {
+  if (!anchor) return '—';
+  if (anchor.kind === 'node') {
+    return displayTex(
+      doc.nodes.find((item) => item.id === anchor.id)?.label ?? 'object',
+    );
+  }
+  return displayTex(
+    doc.arrows.find((item) => item.id === anchor.id)?.label ?? '1-cell',
+  );
+}
+
 function Inspector({
   doc,
   selection,
@@ -206,11 +241,15 @@ function Inspector({
           <div className="mx-auto mb-4 grid size-10 place-items-center rounded-full border bg-muted/35">
             <MousePointer2 className="size-4" />
           </div>
-          <p className="text-sm font-medium text-foreground">Nothing selected</p>
+          <p className="text-sm font-medium text-foreground">
+            Nothing selected
+          </p>
           <p className="mt-1.5 text-xs leading-relaxed">
             Select an object, arrow, or 2-cell to edit its LaTeX and geometry.
           </p>
-          <p className="mt-4 font-mono text-[10px] tracking-wide">V · O · A · T</p>
+          <p className="mt-4 font-mono text-[10px] tracking-wide">
+            V · O · A · T
+          </p>
         </div>
       </div>
     );
@@ -395,23 +434,71 @@ function Inspector({
             <div className="rounded-lg border bg-muted/35 p-2.5">
               <p className="text-[10px] text-muted-foreground">Source</p>
               <p className="mt-1 truncate font-serif text-sm">
-                {displayTex(
-                  doc.arrows.find((item) => item.id === cell.sourceArrow)?.label ?? '',
-                )}
+                {anchorName(doc, cellSourceAnchor(cell))}
               </p>
             </div>
             <div className="rounded-lg border bg-muted/35 p-2.5">
               <p className="text-[10px] text-muted-foreground">Target</p>
               <p className="mt-1 truncate font-serif text-sm">
-                {displayTex(
-                  doc.arrows.find((item) => item.id === cell.targetArrow)?.label ?? '',
-                )}
+                {anchorName(doc, cellTargetAnchor(cell))}
               </p>
             </div>
           </div>
+          <div className="space-y-2">
+            <Label>2-cell arrow style</Label>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between"
+                  />
+                }
+              >
+                {cell.head === 'reverse'
+                  ? 'Arrowhead toward source  ⇐'
+                  : cell.head === 'equality'
+                    ? 'Equality  ='
+                    : cell.head === 'none'
+                      ? 'Label only  (omit glyph)'
+                      : 'Arrowhead toward target  ⇒'}
+                <ChevronDown data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuRadioGroup
+                  value={cell.head ?? 'arrow'}
+                  onValueChange={(value) =>
+                    onPatchCell(cell.id, { head: value as CellHead })
+                  }
+                >
+                  <DropdownMenuRadioItem value="arrow">
+                    Arrowhead toward target ⇒
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="reverse">
+                    Arrowhead toward source ⇐
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="equality">
+                    Equality =
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="none">
+                    Label only (omit 2-cell glyph)
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-950">
-            Native Xy-pic mapping:{' '}
-            <code className="font-mono">\\xtwocell[…]{'{}'}</code>
+            {isNativeParallelCell(doc, cell) ? (
+              <>
+                Native parallel mapping:{' '}
+                <code className="font-mono">\\xtwocell</code>
+              </>
+            ) : cellBoundaryPaths(cell).source.length === 2 ||
+              cellBoundaryPaths(cell).target.length === 2 ? (
+              <>Composite boundary with an exact named path anchor in Xy-pic</>
+            ) : (
+              <>General native 2-cell between attached anchors</>
+            )}
           </div>
           <Button
             variant="outline"
@@ -420,11 +507,15 @@ function Inspector({
               onPatchCell(cell.id, {
                 sourceArrow: cell.targetArrow,
                 targetArrow: cell.sourceArrow,
+                sourceAnchor: cellTargetAnchor(cell) ?? undefined,
+                targetAnchor: cellSourceAnchor(cell) ?? undefined,
+                sourcePath: cellBoundaryPaths(cell).target,
+                targetPath: cellBoundaryPaths(cell).source,
               })
             }
           >
             <ArrowLeftRight data-icon="inline-start" />
-            Reverse 2-cell
+            Swap source and target boundaries
           </Button>
         </>
       )}
@@ -448,12 +539,23 @@ function ExportDialog({
   const [mode, setMode] = useState<'typora' | 'snippet' | 'latex'>('typora');
   const [background, setBackground] = useState(false);
   const xy = useMemo(() => generateXyPic(doc, mode), [doc, mode]);
-  const svg = useMemo(() => generateSvg(doc, { background }), [background, doc]);
+  const svg = useMemo(
+    () => generateSvg(doc, { background }),
+    [background, doc],
+  );
   const json = useMemo(() => JSON.stringify(doc, null, 2), [doc]);
 
-  const copy = async (value: string, label: string) => {
+  const copy = async (
+    value: string,
+    label: string,
+    warnings: string[] = [],
+  ) => {
     await navigator.clipboard.writeText(value);
-    onStatus(`${label} copied to clipboard.`);
+    onStatus(
+      warnings.length > 0
+        ? `${label} copied with ${warnings.length} warning(s): ${warnings[0]}`
+        : `${label} copied to clipboard.`,
+    );
   };
 
   return (
@@ -504,7 +606,10 @@ function ExportDialog({
               aria-label="Generated Xy-pic code"
             />
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => copy(xy.text, 'Xy-pic')}>
+              <Button
+                variant="outline"
+                onClick={() => copy(xy.text, 'Xy-pic', xy.warnings)}
+              >
                 <Copy data-icon="inline-start" />
                 Copy
               </Button>
@@ -537,7 +642,8 @@ function ExportDialog({
               dangerouslySetInnerHTML={{ __html: svg }}
             />
             <p className="text-xs text-muted-foreground">
-              True vector curves, arrowheads, and editable text; no raster image is embedded.
+              True vector curves, arrowheads, and editable text; no raster image
+              is embedded.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => copy(svg, 'SVG')}>
@@ -568,7 +674,11 @@ function ExportDialog({
               </Button>
               <Button
                 onClick={() =>
-                  downloadText(json, 'xyquiver-diagram.json', 'application/json')
+                  downloadText(
+                    json,
+                    'xyquiver-diagram.json',
+                    'application/json',
+                  )
                 }
               >
                 <FileJson data-icon="inline-start" />
@@ -578,7 +688,8 @@ function ExportDialog({
           </TabsContent>
         </Tabs>
         <DialogFooter className="text-xs text-muted-foreground sm:justify-start">
-          SVG bounds are cropped from diagram geometry, including curved arrows and labels.
+          SVG bounds are cropped from diagram geometry, including curved arrows
+          and labels.
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -588,26 +699,38 @@ function ExportDialog({
 export function XyQuiverShell() {
   const [history, setHistory] = useState<HistoryState>(() => ({
     past: [],
-    present: cloneDocument(exampleDocuments.showcase),
+    present: cloneDocument(exampleDocuments.quasicategory),
     future: [],
   }));
   const [tool, setTool] = useState<EditorTool>('select');
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
+  const [selections, setSelections] = useState<Selection[]>([]);
+  const [editing, setEditing] = useState<Selection | null>(null);
   const [codeOpen, setCodeOpen] = useState(false);
   const [pendingNode, setPendingNode] = useState<NodeId | null>(null);
   const [pendingArrow, setPendingArrow] = useState<ArrowId | null>(null);
-  const [status, setStatus] = useState('Ready.');
+  const [canvasCancelEpoch, setCanvasCancelEpoch] = useState(0);
+  const [status, setStatus] = useState(
+    'Quick draw: drag object-to-object for a 1-cell; drag an object to an arrow for a 2-cell.',
+  );
   const importRef = useRef<HTMLInputElement>(null);
-  const dragStart = useRef<DiagramDocument | null>(null);
   const doc = history.present;
+  const selection = selections.at(-1) ?? null;
   const typora = useMemo(() => generateXyPic(doc, 'typora'), [doc]);
   const grid = useMemo(() => matrixAxes(doc, true), [doc]);
 
+  const cancelCanvasGesture = useCallback(
+    () => setCanvasCancelEpoch((current) => current + 1),
+    [],
+  );
+
   const commit = useCallback(
     (update: (current: DiagramDocument) => DiagramDocument) => {
+      cancelCanvasGesture();
       setHistory((current) => {
         const next = update(current.present);
-        if (JSON.stringify(next) === JSON.stringify(current.present)) return current;
+        if (JSON.stringify(next) === JSON.stringify(current.present))
+          return current;
         return {
           past: [...current.past.slice(-119), current.present],
           present: next,
@@ -615,10 +738,11 @@ export function XyQuiverShell() {
         };
       });
     },
-    [],
+    [cancelCanvasGesture],
   );
 
   const undo = useCallback(() => {
+    cancelCanvasGesture();
     setHistory((current) => {
       const previous = current.past.at(-1);
       if (!previous) return current;
@@ -628,12 +752,15 @@ export function XyQuiverShell() {
         future: [current.present, ...current.future],
       };
     });
+    setSelections([]);
+    setEditing(null);
     setPendingNode(null);
     setPendingArrow(null);
     setStatus('Undid last change.');
-  }, []);
+  }, [cancelCanvasGesture]);
 
   const redo = useCallback(() => {
+    cancelCanvasGesture();
     setHistory((current) => {
       const next = current.future[0];
       if (!next) return current;
@@ -643,17 +770,25 @@ export function XyQuiverShell() {
         future: current.future.slice(1),
       };
     });
+    setSelections([]);
+    setEditing(null);
     setStatus('Redid change.');
-  }, []);
+  }, [cancelCanvasGesture]);
 
-  const loadDocument = useCallback((next: DiagramDocument, message: string) => {
-    setHistory({ past: [], present: cloneDocument(next), future: [] });
-    setSelection(null);
-    setPendingNode(null);
-    setPendingArrow(null);
-    setTool('select');
-    setStatus(message);
-  }, []);
+  const loadDocument = useCallback(
+    (next: DiagramDocument, message: string) => {
+      cancelCanvasGesture();
+      setHistory({ past: [], present: cloneDocument(next), future: [] });
+      setSelections([]);
+      setEditing(null);
+      setPendingNode(null);
+      setPendingArrow(null);
+      setTool('select');
+      setConnectionMode('auto');
+      setStatus(message);
+    },
+    [cancelCanvasGesture],
+  );
 
   useEffect(() => {
     try {
@@ -662,11 +797,13 @@ export function XyQuiverShell() {
       const restored = validateDocument(JSON.parse(stored));
       if (restored) {
         setHistory({ past: [], present: restored, future: [] });
-        setSelection(null);
+        setSelections([]);
         setStatus('Restored local draft.');
       }
     } catch {
-      setStatus('The saved draft could not be restored; the example is still available.');
+      setStatus(
+        'The saved draft could not be restored; the example is still available.',
+      );
     }
   }, []);
 
@@ -677,12 +814,44 @@ export function XyQuiverShell() {
     return () => window.clearTimeout(timer);
   }, [doc]);
 
+  const selectElement = useCallback(
+    (next: Selection | null, additive = false) => {
+      setEditing(null);
+      if (!next) {
+        setSelections([]);
+        return;
+      }
+      setSelections((current) => {
+        if (!additive) return [next];
+        const key = selectionKey(next);
+        return current.some((item) => selectionKey(item) === key)
+          ? current.filter((item) => selectionKey(item) !== key)
+          : [...current, next];
+      });
+    },
+    [],
+  );
+
+  const selectMarquee = useCallback((items: Selection[], additive: boolean) => {
+    setEditing(null);
+    setSelections((current) => {
+      if (!additive) return items;
+      const merged = new Map(current.map((item) => [selectionKey(item), item]));
+      for (const item of items) merged.set(selectionKey(item), item);
+      return [...merged.values()];
+    });
+  }, []);
+
   const deleteSelected = useCallback(() => {
-    if (!selection) return;
-    commit((current) => deleteSelection(current, selection));
-    setSelection(null);
-    setStatus('Deleted selected element.');
-  }, [commit, selection]);
+    if (selections.length === 0) return;
+    const count = selections.length;
+    commit((current) => deleteSelections(current, selections));
+    setSelections([]);
+    setEditing(null);
+    setStatus(
+      `Deleted ${count} selected ${count === 1 ? 'element' : 'elements'}.`,
+    );
+  }, [commit, selections]);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -717,26 +886,42 @@ export function XyQuiverShell() {
       };
       const nextTool = shortcuts[event.key.toLowerCase()];
       if (nextTool) {
+        cancelCanvasGesture();
         setTool(nextTool);
+        setConnectionMode(
+          nextTool === 'arrow'
+            ? 'arrow'
+            : nextTool === 'cell'
+              ? 'cell'
+              : 'auto',
+        );
         setPendingNode(null);
         setPendingArrow(null);
       }
       if (event.key === 'Escape') {
+        cancelCanvasGesture();
         setPendingNode(null);
         setPendingArrow(null);
-        setSelection(null);
+        setEditing(null);
+        setSelections([]);
         setStatus('Cancelled current action.');
+      }
+      if (event.key === 'Enter' && selection) {
+        event.preventDefault();
+        setEditing(selection);
       }
     };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [deleteSelected, redo, undo]);
+  }, [cancelCanvasGesture, deleteSelected, redo, selection, undo]);
 
   const patchNode = useCallback(
     (id: NodeId, patch: Partial<DiagramNode>) => {
       commit((current) => ({
         ...current,
-        nodes: current.nodes.map((node) => (node.id === id ? { ...node, ...patch } : node)),
+        nodes: current.nodes.map((node) =>
+          node.id === id ? { ...node, ...patch } : node,
+        ),
       }));
     },
     [commit],
@@ -744,17 +929,36 @@ export function XyQuiverShell() {
 
   const patchArrow = useCallback(
     (id: ArrowId, patch: Partial<DiagramArrow>) => {
-      const cell = doc.cells.find(
-        (item) => item.sourceArrow === id || item.targetArrow === id,
-      );
+      const cell = doc.cells.find((item) => {
+        const source = cellSourceAnchor(item);
+        const target = cellTargetAnchor(item);
+        const paths = cellBoundaryPaths(item);
+        return (
+          (source?.kind === 'arrow' && source.id === id) ||
+          (target?.kind === 'arrow' && target.id === id) ||
+          paths.source.includes(id) ||
+          paths.target.includes(id)
+        );
+      });
       if (cell && (patch.source || patch.target)) {
-        setStatus('Reverse or retarget both boundary arrows before changing this 2-cell.');
+        setStatus(
+          'Reverse or retarget both boundary arrows before changing this 2-cell.',
+        );
         return;
       }
       commit((current) => ({
         ...current,
         arrows: current.arrows.map((arrow) =>
-          arrow.id === id ? { ...arrow, ...patch } : arrow,
+          arrow.id === id
+            ? {
+                ...arrow,
+                ...patch,
+                curve:
+                  patch.curve === undefined
+                    ? arrow.curve
+                    : constrainArrowCurve(current, id, patch.curve),
+              }
+            : arrow,
         ),
       }));
     },
@@ -776,7 +980,8 @@ export function XyQuiverShell() {
   const addNode = useCallback(
     (point: Point) => {
       const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      const label = labels[doc.nodes.filter((node) => !node.ghost).length % labels.length];
+      const label =
+        labels[doc.nodes.filter((node) => !node.ghost).length % labels.length];
       const gridPoint = snapPointToMatrix(doc, point);
       const next: DiagramNode = {
         id: makeId('node'),
@@ -792,16 +997,18 @@ export function XyQuiverShell() {
         return;
       }
       commit((current) => ({ ...current, nodes: [...current.nodes, next] }));
-      setSelection({ kind: 'node', id: next.id });
+      const nextSelection: Selection = { kind: 'node', id: next.id };
+      setSelections([nextSelection]);
+      setEditing(nextSelection);
       setStatus(`Created object ${label}.`);
     },
-    [commit, doc.nodes],
+    [commit, doc],
   );
 
   const handleNodeAction = useCallback(
     (id: NodeId) => {
       if (tool !== 'arrow') {
-        setSelection({ kind: 'node', id });
+        setSelections([{ kind: 'node', id }]);
         return;
       }
       if (!pendingNode) {
@@ -840,7 +1047,9 @@ export function XyQuiverShell() {
         return { ...current, arrows: [...arrows, next] };
       });
       setPendingNode(null);
-      setSelection({ kind: 'arrow', id: nextId });
+      const nextSelection: Selection = { kind: 'arrow', id: nextId };
+      setSelections([nextSelection]);
+      setEditing(nextSelection);
       setStatus(`Created 1-cell ${label}.`);
     },
     [commit, doc.arrows, pendingNode, tool],
@@ -849,36 +1058,52 @@ export function XyQuiverShell() {
   const handleArrowAction = useCallback(
     (id: ArrowId) => {
       if (tool !== 'cell') {
-        setSelection({ kind: 'arrow', id });
+        setSelections([{ kind: 'arrow', id }]);
         return;
       }
       if (!pendingArrow) {
         setPendingArrow(id);
-        setStatus('Choose a parallel target arrow for the 2-cell.');
+        setStatus(
+          'Click a parallel target for a native 2-cell, or drag for a general attached 2-cell.',
+        );
         return;
       }
       const sourceArrow = doc.arrows.find((arrow) => arrow.id === pendingArrow);
       const targetArrow = doc.arrows.find((arrow) => arrow.id === id);
-      if (!sourceArrow || !targetArrow || !areParallel(sourceArrow, targetArrow)) {
-        setStatus('A native 2-cell requires two distinct arrows with the same source and target.');
+      if (
+        !sourceArrow ||
+        !targetArrow ||
+        !areParallel(sourceArrow, targetArrow)
+      ) {
+        setStatus(
+          'The click workflow needs parallel arrows; drag between anchors for a general 2-cell.',
+        );
         setPendingArrow(null);
         return;
       }
-      const alreadyUsed = doc.cells.some(
-        (cell) =>
-          [cell.sourceArrow, cell.targetArrow].includes(sourceArrow.id) ||
-          [cell.sourceArrow, cell.targetArrow].includes(targetArrow.id),
+      const conflict = cellCreationConflict(
+        doc,
+        { kind: 'arrow', id: sourceArrow.id, t: 0.5 },
+        { kind: 'arrow', id: targetArrow.id, t: 0.5 },
       );
-      if (alreadyUsed) {
-        setStatus('One of those arrows already bounds a native 2-cell.');
+      if (conflict) {
+        setStatus(
+          conflict === 'duplicate'
+            ? 'That 2-cell boundary pair already exists.'
+            : 'One of those arrows already bounds a native 2-cell.',
+        );
         setPendingArrow(null);
         return;
       }
       const nextId = makeId('cell');
       const label = greekLabels[doc.cells.length % greekLabels.length];
       commit((current) => {
-        const source = current.arrows.find((arrow) => arrow.id === sourceArrow.id)!;
-        const target = current.arrows.find((arrow) => arrow.id === targetArrow.id)!;
+        const source = current.arrows.find(
+          (arrow) => arrow.id === sourceArrow.id,
+        )!;
+        const target = current.arrows.find(
+          (arrow) => arrow.id === targetArrow.id,
+        )!;
         const shouldSeparate = Math.abs(source.curve - target.curve) < 30;
         const arrows = shouldSeparate
           ? current.arrows.map((arrow) =>
@@ -898,49 +1123,299 @@ export function XyQuiverShell() {
               id: nextId,
               sourceArrow: source.id,
               targetArrow: target.id,
+              sourceAnchor: { kind: 'arrow', id: source.id, t: 0.5 },
+              targetAnchor: { kind: 'arrow', id: target.id, t: 0.5 },
+              sourcePath: [source.id],
+              targetPath: [target.id],
               label,
               color: '#5b4bc4',
+              head: 'arrow',
             },
           ],
         };
       });
       setPendingArrow(null);
-      setSelection({ kind: 'cell', id: nextId });
+      const nextSelection: Selection = { kind: 'cell', id: nextId };
+      setSelections([nextSelection]);
+      setEditing(nextSelection);
       setStatus(`Created native 2-cell ${displayTex(label)}.`);
     },
-    [commit, doc.arrows, doc.cells, pendingArrow, tool],
+    [commit, doc, pendingArrow, tool],
   );
 
-  const beginNodeDrag = useCallback(() => {
-    dragStart.current = history.present;
-  }, [history.present]);
-
-  const moveNode = useCallback((id: NodeId, point: Point) => {
-    setHistory((current) => ({
-      ...current,
-      present: {
-        ...current.present,
-        nodes: current.present.nodes.map((node) =>
-          node.id === id ? { ...node, ...point } : node,
+  const moveNodes = useCallback(
+    (positions: Record<NodeId, Point>) => {
+      commit((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          positions[node.id] ? { ...node, ...positions[node.id] } : node,
         ),
-      },
-    }));
-  }, []);
+      }));
+      setStatus(
+        `Moved ${Object.keys(positions).length} ${Object.keys(positions).length === 1 ? 'object' : 'objects'}.`,
+      );
+    },
+    [commit],
+  );
 
-  const endNodeDrag = useCallback(() => {
-    const before = dragStart.current;
-    dragStart.current = null;
-    if (!before) return;
-    setHistory((current) => {
-      if (JSON.stringify(before) === JSON.stringify(current.present)) return current;
-      return {
-        past: [...current.past.slice(-119), before],
-        present: current.present,
-        future: [],
+  const setArrowCurve = useCallback(
+    (id: ArrowId, curve: number) => {
+      const constrained = constrainArrowCurve(doc, id, curve);
+      commit((current) => ({
+        ...current,
+        arrows: current.arrows.map((arrow) =>
+          arrow.id === id
+            ? { ...arrow, curve: constrainArrowCurve(current, id, curve) }
+            : arrow,
+        ),
+      }));
+      setStatus(`Curvature set to ${Math.round(constrained)}.`);
+    },
+    [commit, doc],
+  );
+
+  const commitLabel = useCallback(
+    (item: Selection, label: string) => {
+      commit((current) =>
+        item.kind === 'node'
+          ? {
+              ...current,
+              nodes: current.nodes.map((node) =>
+                node.id === item.id ? { ...node, label } : node,
+              ),
+            }
+          : item.kind === 'arrow'
+            ? {
+                ...current,
+                arrows: current.arrows.map((arrow) =>
+                  arrow.id === item.id ? { ...arrow, label } : arrow,
+                ),
+              }
+            : {
+                ...current,
+                cells: current.cells.map((cell) =>
+                  cell.id === item.id ? { ...cell, label } : cell,
+                ),
+              },
+      );
+      setEditing(null);
+      setStatus('Updated LaTeX label.');
+    },
+    [commit],
+  );
+
+  const quickConnect = useCallback(
+    (source: CanvasAnchor, target: CanvasAnchor, requested: ConnectionMode) => {
+      const connectionError = connectionValidationError(
+        source,
+        target,
+        requested,
+      );
+      if (connectionError) {
+        setStatus(connectionError);
+        return;
+      }
+      const anchorExists = (anchor: CanvasAnchor) =>
+        anchor.kind === 'point' ||
+        (anchor.kind === 'node'
+          ? doc.nodes.some((node) => node.id === anchor.id)
+          : doc.arrows.some((arrow) => arrow.id === anchor.id));
+      if (!anchorExists(source) || !anchorExists(target)) {
+        setStatus('That gesture referenced an object that no longer exists.');
+        return;
+      }
+      const mode =
+        requested === 'auto'
+          ? source.kind === 'arrow' || target.kind === 'arrow'
+            ? 'cell'
+            : 'arrow'
+          : requested;
+      const newNodes: DiagramNode[] = [];
+      const resolveNode = (
+        anchor: CanvasAnchor,
+        index: number,
+      ): NodeId | null => {
+        if (anchor.kind === 'node') return anchor.id;
+        if (anchor.kind === 'arrow') return null;
+        const occupied = doc.nodes.find(
+          (node) => node.x === anchor.point.x && node.y === anchor.point.y,
+        );
+        if (occupied) return occupied.id;
+        const labelIndex =
+          doc.nodes.filter((node) => !node.ghost).length + index;
+        const node: DiagramNode = {
+          id: makeId('node'),
+          label: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[labelIndex % 26],
+          x: anchor.point.x,
+          y: anchor.point.y,
+        };
+        newNodes.push(node);
+        return node.id;
       };
-    });
-    setStatus('Moved object.');
-  }, []);
+
+      if (mode === 'arrow') {
+        const sourceId = resolveNode(source, 0);
+        const targetId = resolveNode(target, newNodes.length);
+        if (!sourceId || !targetId || sourceId === targetId) {
+          setStatus('Choose two different object anchors for a 1-cell.');
+          return;
+        }
+        const nextId = makeId('arrow');
+        const label = arrowLabels[doc.arrows.length % arrowLabels.length];
+        commit((current) => {
+          const existing = current.arrows.filter(
+            (arrow) => arrow.source === sourceId && arrow.target === targetId,
+          );
+          let arrows = current.arrows;
+          if (existing.length === 1 && Math.abs(existing[0].curve) < 8) {
+            arrows = arrows.map((arrow) =>
+              arrow.id === existing[0].id
+                ? { ...arrow, curve: 58, labelSide: 'left' as const }
+                : arrow,
+            );
+          }
+          const next: DiagramArrow = {
+            id: nextId,
+            source: sourceId,
+            target: targetId,
+            label,
+            curve: existing.length === 0 ? 0 : -58 - (existing.length - 1) * 36,
+            labelSide: existing.length === 0 ? 'left' : 'right',
+            stroke: 'solid',
+            head: 'arrow',
+            tail: 'none',
+            color: '#273244',
+          };
+          return {
+            ...current,
+            nodes: [...current.nodes, ...newNodes],
+            arrows: [...arrows, next],
+          };
+        });
+        const nextSelection: Selection = { kind: 'arrow', id: nextId };
+        setSelections([nextSelection]);
+        setEditing(nextSelection);
+        setStatus(
+          newNodes.length > 0
+            ? `Created ${newNodes.length} ${newNodes.length === 1 ? 'object' : 'objects'} and 1-cell ${label}.`
+            : `Created 1-cell ${label}.`,
+        );
+        return;
+      }
+
+      const sourceNodeId =
+        source.kind === 'point' ? resolveNode(source, 0) : null;
+      const targetNodeId =
+        target.kind === 'point' ? resolveNode(target, newNodes.length) : null;
+      const sourceAnchor =
+        source.kind === 'point'
+          ? sourceNodeId
+            ? ({ kind: 'node', id: sourceNodeId } as const)
+            : null
+          : canvasAnchorToCellAnchor(source);
+      const targetAnchor =
+        target.kind === 'point'
+          ? targetNodeId
+            ? ({ kind: 'node', id: targetNodeId } as const)
+            : null
+          : canvasAnchorToCellAnchor(target);
+      if (!sourceAnchor || !targetAnchor) return;
+      if (
+        sourceAnchor.kind === targetAnchor.kind &&
+        sourceAnchor.id === targetAnchor.id
+      ) {
+        setStatus('Choose two different anchors for a 2-cell.');
+        return;
+      }
+      const conflict = cellCreationConflict(doc, sourceAnchor, targetAnchor);
+      if (conflict) {
+        setStatus(
+          conflict === 'duplicate'
+            ? 'That 2-cell boundary pair already exists.'
+            : 'One of those arrows already bounds a native 2-cell.',
+        );
+        return;
+      }
+      const sourceArrowForMode =
+        sourceAnchor.kind === 'arrow'
+          ? doc.arrows.find((arrow) => arrow.id === sourceAnchor.id)
+          : null;
+      const targetArrowForMode =
+        targetAnchor.kind === 'arrow'
+          ? doc.arrows.find((arrow) => arrow.id === targetAnchor.id)
+          : null;
+      const nativeParallel = Boolean(
+        sourceArrowForMode &&
+        targetArrowForMode &&
+        areParallel(sourceArrowForMode, targetArrowForMode),
+      );
+      const nextId = makeId('cell');
+      const label = greekLabels[doc.cells.length % greekLabels.length];
+      commit((current) => {
+        const withNodes = {
+          ...current,
+          nodes: [...current.nodes, ...newNodes],
+        };
+        const paths = inferCellBoundaryPaths(
+          withNodes,
+          sourceAnchor,
+          targetAnchor,
+        );
+        const sourceArrow =
+          sourceAnchor.kind === 'arrow'
+            ? current.arrows.find((arrow) => arrow.id === sourceAnchor.id)
+            : null;
+        const targetArrow =
+          targetAnchor.kind === 'arrow'
+            ? current.arrows.find((arrow) => arrow.id === targetAnchor.id)
+            : null;
+        const shouldSeparate =
+          nativeParallel &&
+          sourceArrow &&
+          targetArrow &&
+          Math.abs(sourceArrow.curve - targetArrow.curve) < 30;
+        const arrows = shouldSeparate
+          ? current.arrows.map((arrow) =>
+              arrow.id === sourceArrow!.id
+                ? { ...arrow, curve: 62, labelSide: 'left' as const }
+                : arrow.id === targetArrow!.id
+                  ? { ...arrow, curve: -62, labelSide: 'right' as const }
+                  : arrow,
+            )
+          : current.arrows;
+        return {
+          ...withNodes,
+          arrows,
+          cells: [
+            ...current.cells,
+            {
+              id: nextId,
+              sourceArrow: nativeParallel ? sourceArrow!.id : undefined,
+              targetArrow: nativeParallel ? targetArrow!.id : undefined,
+              sourceAnchor,
+              targetAnchor,
+              sourcePath: paths.source,
+              targetPath: paths.target,
+              label,
+              color: '#5b4bc4',
+              head: 'arrow' as const,
+            },
+          ],
+        };
+      });
+      const nextSelection: Selection = { kind: 'cell', id: nextId };
+      setSelections([nextSelection]);
+      setEditing(nextSelection);
+      setStatus(
+        nativeParallel
+          ? `Created native parallel 2-cell ${displayTex(label)}.`
+          : sourceAnchor.kind === 'node' && targetAnchor.kind === 'arrow'
+            ? `Created attached 2-cell ${displayTex(label)} from the vertex to the opposite edge.`
+            : `Created general attached 2-cell ${displayTex(label)}.`,
+      );
+    },
+    [commit, doc],
+  );
 
   const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -951,35 +1426,61 @@ export function XyQuiverShell() {
       if (!parsed) throw new Error('Invalid document');
       loadDocument(parsed, `Opened ${file.name}.`);
     } catch {
-      setStatus('That file is not a valid XyQuiver v1 document.');
+      setStatus('That file is not a valid XyQuiver document.');
     }
   };
 
   const switchTool = (next: EditorTool) => {
+    cancelCanvasGesture();
     setTool(next);
+    if (next === 'select') setConnectionMode('auto');
+    if (next === 'arrow') setConnectionMode('arrow');
+    if (next === 'cell') setConnectionMode('cell');
     setPendingNode(null);
     setPendingArrow(null);
     setStatus(
       next === 'object'
         ? 'Click the canvas to create an object.'
         : next === 'arrow'
-          ? 'Choose a source object, then a target object.'
+          ? 'Drag between object or grid anchors to force a 1-cell.'
           : next === 'cell'
-            ? 'Choose two parallel 1-cells.'
-            : 'Select and drag diagram elements.',
+            ? 'Drag between objects or arrows to force a 2-cell.'
+            : 'Quick draw: drag object-to-object for 1-cells, or to an arrow for 2-cells.',
+    );
+  };
+
+  const chooseConnectionMode = (mode: ConnectionMode) => {
+    cancelCanvasGesture();
+    setConnectionMode(mode);
+    setTool(mode === 'auto' ? 'select' : mode);
+    setPendingNode(null);
+    setPendingArrow(null);
+    setStatus(
+      mode === 'auto'
+        ? 'Smart connection: endpoint dimensions choose 1-cell or 2-cell.'
+        : mode === 'arrow'
+          ? 'Forced 1-cell: drag between object or grid anchors.'
+          : 'Forced 2-cell: drag between any two object or arrow anchors.',
     );
   };
 
   const copyXyPic = async () => {
     await navigator.clipboard.writeText(typora.text);
-    setStatus('Typora-ready Xy-pic copied.');
+    setStatus(
+      typora.warnings.length > 0
+        ? `Copied with ${typora.warnings.length} warning(s): ${typora.warnings[0]}`
+        : 'Typora-ready Xy-pic copied.',
+    );
   };
 
   return (
     <main className="flex h-dvh min-h-[560px] flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card/95 px-3 shadow-[0_1px_8px_rgb(36_31_27/4%)] backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="font-serif text-xl italic tracking-[-0.08em] text-primary" aria-hidden="true">
+          <div
+            className="font-serif text-xl italic tracking-[-0.08em] text-primary"
+            aria-hidden="true"
+          >
             xy
           </div>
           <div className="min-w-0 leading-tight">
@@ -992,7 +1493,10 @@ export function XyQuiverShell() {
           </div>
         </div>
 
-        <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
+        <Separator
+          orientation="vertical"
+          className="mx-1 hidden h-6 sm:block"
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
@@ -1112,28 +1616,28 @@ export function XyQuiverShell() {
           <div className="absolute left-[78px] top-4 z-10 hidden items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground sm:flex">
             <span className="font-semibold text-foreground">
               {tool === 'select'
-                ? 'Select'
+                ? 'Quick draw · auto'
                 : tool === 'object'
                   ? 'Place object'
                   : tool === 'arrow'
-                    ? pendingNode
-                      ? 'Choose target'
-                      : 'Choose source'
-                    : pendingArrow
-                      ? 'Choose target 1-cell'
-                      : 'Choose source 1-cell'}
+                    ? 'Force 1-cell'
+                    : 'Force 2-cell'}
             </span>
             <span className="text-border">/</span>
             <span>
-              {grid.columns.length}×{grid.rows.length} matrix · {doc.nodes.length} objects ·{' '}
-              {doc.arrows.length} arrows · {doc.cells.length} 2-cells
+              {grid.columns.length}×{grid.rows.length} matrix ·{' '}
+              {doc.nodes.length} objects · {doc.arrows.length} arrows ·{' '}
+              {doc.cells.length} 2-cells
             </span>
           </div>
 
           <DiagramCanvas
+            key={canvasCancelEpoch}
             doc={doc}
-            selection={selection}
+            selections={selections}
+            editing={editing}
             tool={tool}
+            connectionMode={connectionMode}
             pendingNode={pendingNode}
             pendingArrow={pendingArrow}
             onCanvasPoint={(point) => {
@@ -1143,12 +1647,21 @@ export function XyQuiverShell() {
                 setPendingArrow(null);
               }
             }}
-            onSelect={setSelection}
+            onSelect={selectElement}
+            onMarqueeSelect={selectMarquee}
             onNodeAction={handleNodeAction}
             onArrowAction={handleArrowAction}
-            onBeginNodeDrag={beginNodeDrag}
-            onMoveNode={moveNode}
-            onEndNodeDrag={endNodeDrag}
+            onQuickNode={addNode}
+            onQuickConnect={quickConnect}
+            onMoveNodes={moveNodes}
+            onSetArrowCurve={setArrowCurve}
+            onBeginLabelEdit={(item) => {
+              setSelections([item]);
+              setEditing(item);
+            }}
+            onCommitLabel={commitLabel}
+            onCancelLabelEdit={() => setEditing(null)}
+            onStatus={setStatus}
           />
 
           <div className="pointer-events-none absolute bottom-3 left-[78px] z-10 max-w-[52vw] truncate rounded-md border bg-card/88 px-2.5 py-1.5 text-[10px] text-muted-foreground shadow-sm backdrop-blur">
@@ -1160,24 +1673,101 @@ export function XyQuiverShell() {
           aria-label="Diagram tools"
           className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border bg-card/92 p-1.5 shadow-[0_8px_28px_rgb(45_37_32/10%)] backdrop-blur"
         >
-          {tools.map(({ id, label, key, icon: Icon }) => (
-            <Button
-              key={id}
-              variant={tool === id ? 'secondary' : 'ghost'}
-              size="icon-lg"
-              className={
-                tool === id
-                  ? 'bg-accent text-primary shadow-none'
-                  : 'text-muted-foreground'
+          {tools
+            .filter(({ id }) => id === 'select' || id === 'object')
+            .map(({ id, label, key, icon: Icon }) => (
+              <Button
+                key={id}
+                variant={tool === id ? 'secondary' : 'ghost'}
+                size="icon-lg"
+                className={
+                  tool === id
+                    ? 'bg-accent text-primary shadow-none'
+                    : 'text-muted-foreground'
+                }
+                aria-label={`${label} tool`}
+                aria-pressed={tool === id}
+                title={`${label} (${key})`}
+                onClick={() => switchTool(id)}
+              >
+                <Icon />
+              </Button>
+            ))}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant={
+                    tool === 'arrow' || tool === 'cell' ? 'secondary' : 'ghost'
+                  }
+                  size="icon-lg"
+                  className={
+                    tool === 'arrow' || tool === 'cell'
+                      ? 'bg-accent text-primary shadow-none'
+                      : 'text-muted-foreground'
+                  }
+                  aria-label={`Connection mode: ${
+                    connectionMode === 'auto'
+                      ? 'smart'
+                      : connectionMode === 'arrow'
+                        ? 'forced 1-cell'
+                        : 'forced 2-cell'
+                  }`}
+                  title={`Connection mode: ${
+                    connectionMode === 'auto'
+                      ? 'Smart'
+                      : connectionMode === 'arrow'
+                        ? 'Force 1-cell'
+                        : 'Force 2-cell'
+                  } (A / T)`}
+                />
               }
-              aria-label={`${label} tool`}
-              aria-pressed={tool === id}
-              title={`${label} (${key})`}
-              onClick={() => switchTool(id)}
             >
-              <Icon />
-            </Button>
-          ))}
+              {connectionMode === 'auto' ? (
+                <MousePointer2 />
+              ) : connectionMode === 'cell' ? (
+                <Sparkles />
+              ) : (
+                <ArrowRight />
+              )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="center" className="w-64">
+              <DropdownMenuRadioGroup
+                value={connectionMode}
+                onValueChange={(value) =>
+                  chooseConnectionMode(value as ConnectionMode)
+                }
+              >
+                <DropdownMenuRadioItem value="auto" className="min-h-10">
+                  <MousePointer2 />
+                  Smart connection
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="min-h-10">
+                  <ArrowRight />
+                  Force connection dimension
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuRadioGroup
+                    value={connectionMode}
+                    onValueChange={(value) =>
+                      chooseConnectionMode(value as ConnectionMode)
+                    }
+                  >
+                    <DropdownMenuRadioItem value="arrow" className="min-h-10">
+                      <ArrowRight />
+                      1-cell →
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="cell" className="min-h-10">
+                      <Sparkles />
+                      2-cell ⇒
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Separator className="my-2 w-7" />
           <Button
             variant="ghost"
@@ -1195,69 +1785,78 @@ export function XyQuiverShell() {
         </nav>
 
         {codeOpen && (
-        <section
-          className="absolute bottom-3 left-[72px] right-3 z-30 h-[220px] overflow-hidden rounded-xl border border-[#312d36] bg-[#18171d] text-slate-100 shadow-[0_20px_60px_rgb(25_20_27/24%)]"
-          aria-label="Generated code"
-        >
-          <Tabs defaultValue="typora" className="h-full gap-0">
-            <div className="flex h-10 items-center border-b border-white/8 px-3">
-              <TabsList variant="line" className="h-8 text-slate-400">
-                <TabsTrigger
-                  value="typora"
-                  className="text-xs text-slate-400 data-active:text-white"
+          <section
+            className="absolute bottom-3 left-[72px] right-3 z-30 h-[220px] overflow-hidden rounded-xl border border-[#312d36] bg-[#18171d] text-slate-100 shadow-[0_20px_60px_rgb(25_20_27/24%)]"
+            aria-label="Generated code"
+          >
+            <Tabs defaultValue="typora" className="h-full gap-0">
+              <div className="flex h-10 items-center border-b border-white/8 px-3">
+                <TabsList variant="line" className="h-8 text-slate-400">
+                  <TabsTrigger
+                    value="typora"
+                    className="text-xs text-slate-400 data-active:text-white"
+                  >
+                    Typora
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="structure"
+                    className="text-xs text-slate-400 data-active:text-white"
+                  >
+                    Structure
+                  </TabsTrigger>
+                </TabsList>
+                <Badge
+                  className="ml-auto border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                  variant="outline"
                 >
-                  Typora
-                </TabsTrigger>
-                <TabsTrigger
-                  value="structure"
-                  className="text-xs text-slate-400 data-active:text-white"
+                  XyJax compatible
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-1 text-slate-400 hover:bg-white/8 hover:text-white"
+                  aria-label="Close code panel"
+                  onClick={() => setCodeOpen(false)}
                 >
-                  Structure
-                </TabsTrigger>
-              </TabsList>
-              <Badge
-                className="ml-auto border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                variant="outline"
-              >
-                XyJax compatible
-              </Badge>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="ml-1 text-slate-400 hover:bg-white/8 hover:text-white"
-                aria-label="Close code panel"
-                onClick={() => setCodeOpen(false)}
-              >
-                <PanelBottomClose />
-              </Button>
-            </div>
-            <TabsContent value="typora" className="min-h-0 overflow-auto p-3">
-              <pre className="font-mono text-[11px] leading-5 text-slate-300">
-                <code>{typora.text}</code>
-              </pre>
-            </TabsContent>
-            <TabsContent value="structure" className="min-h-0 overflow-auto p-3">
-              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
-                <div className="rounded-lg bg-white/5 p-2">
-                  <p className="text-lg font-semibold text-white">{doc.nodes.length}</p>
-                  <p className="text-slate-400">objects</p>
-                </div>
-                <div className="rounded-lg bg-white/5 p-2">
-                  <p className="text-lg font-semibold text-white">{doc.arrows.length}</p>
-                  <p className="text-slate-400">1-cells</p>
-                </div>
-                <div className="rounded-lg bg-white/5 p-2">
-                  <p className="text-lg font-semibold text-white">{doc.cells.length}</p>
-                  <p className="text-slate-400">2-cells</p>
-                </div>
+                  <PanelBottomClose />
+                </Button>
               </div>
-              <p className="mt-3 text-[11px] leading-5 text-slate-400">
-                Parallel 2-cells compile to native \\xtwocell. Phantom anchors and
-                double arrows cover free-standing XY geometry.
-              </p>
-            </TabsContent>
-          </Tabs>
-        </section>
+              <TabsContent value="typora" className="min-h-0 overflow-auto p-3">
+                <pre className="font-mono text-[11px] leading-5 text-slate-300">
+                  <code>{typora.text}</code>
+                </pre>
+              </TabsContent>
+              <TabsContent
+                value="structure"
+                className="min-h-0 overflow-auto p-3"
+              >
+                <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                  <div className="rounded-lg bg-white/5 p-2">
+                    <p className="text-lg font-semibold text-white">
+                      {doc.nodes.length}
+                    </p>
+                    <p className="text-slate-400">objects</p>
+                  </div>
+                  <div className="rounded-lg bg-white/5 p-2">
+                    <p className="text-lg font-semibold text-white">
+                      {doc.arrows.length}
+                    </p>
+                    <p className="text-slate-400">1-cells</p>
+                  </div>
+                  <div className="rounded-lg bg-white/5 p-2">
+                    <p className="text-lg font-semibold text-white">
+                      {doc.cells.length}
+                    </p>
+                    <p className="text-slate-400">2-cells</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] leading-5 text-slate-400">
+                  Parallel 2-cells compile to native \\xtwocell. Phantom anchors
+                  and double arrows cover free-standing XY geometry.
+                </p>
+              </TabsContent>
+            </Tabs>
+          </section>
         )}
       </div>
 
