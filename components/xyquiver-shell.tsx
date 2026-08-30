@@ -70,7 +70,8 @@ import {
   exampleDocuments,
   generateSvg,
   generateXyPic,
-  snap,
+  matrixAxes,
+  snapPointToMatrix,
   validateDocument,
   type ArrowId,
   type ArrowStroke,
@@ -110,7 +111,7 @@ const examples = [
   { id: 'blank', label: 'Blank diagram' },
 ] as const;
 
-const storageKey = 'xyquiver:document:v3';
+const storageKey = 'xyquiver:document:v4';
 const greekLabels = ['\\alpha', '\\beta', '\\gamma', '\\delta', '\\eta'];
 const arrowLabels = ['F', 'G', 'H', 'K', 'L', 'M'];
 
@@ -251,9 +252,13 @@ function Inspector({
               <DraftInput
                 id="node-x"
                 value={String(node.x)}
-                onCommit={(value) =>
-                  onPatchNode(node.id, { x: snap(Number(value) || node.x) })
-                }
+                onCommit={(value) => {
+                  const point = snapPointToMatrix(doc, {
+                    x: Number(value) || node.x,
+                    y: node.y,
+                  });
+                  onPatchNode(node.id, { x: point.x });
+                }}
                 inputMode="numeric"
                 className="font-mono"
               />
@@ -263,9 +268,13 @@ function Inspector({
               <DraftInput
                 id="node-y"
                 value={String(node.y)}
-                onCommit={(value) =>
-                  onPatchNode(node.id, { y: snap(Number(value) || node.y) })
-                }
+                onCommit={(value) => {
+                  const point = snapPointToMatrix(doc, {
+                    x: node.x,
+                    y: Number(value) || node.y,
+                  });
+                  onPatchNode(node.id, { y: point.y });
+                }}
                 inputMode="numeric"
                 className="font-mono"
               />
@@ -592,6 +601,7 @@ export function XyQuiverShell() {
   const dragStart = useRef<DiagramDocument | null>(null);
   const doc = history.present;
   const typora = useMemo(() => generateXyPic(doc, 'typora'), [doc]);
+  const grid = useMemo(() => matrixAxes(doc, true), [doc]);
 
   const commit = useCallback(
     (update: (current: DiagramDocument) => DiagramDocument) => {
@@ -767,11 +777,12 @@ export function XyQuiverShell() {
     (point: Point) => {
       const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
       const label = labels[doc.nodes.filter((node) => !node.ghost).length % labels.length];
+      const gridPoint = snapPointToMatrix(doc, point);
       const next: DiagramNode = {
         id: makeId('node'),
         label,
-        x: snap(point.x),
-        y: snap(point.y),
+        x: gridPoint.x,
+        y: gridPoint.y,
       };
       const occupied = doc.nodes.some(
         (node) => node.x === next.x && node.y === next.y,
@@ -1114,7 +1125,8 @@ export function XyQuiverShell() {
             </span>
             <span className="text-border">/</span>
             <span>
-              {doc.nodes.length} objects · {doc.arrows.length} arrows · {doc.cells.length} 2-cells
+              {grid.columns.length}×{grid.rows.length} matrix · {doc.nodes.length} objects ·{' '}
+              {doc.arrows.length} arrows · {doc.cells.length} 2-cells
             </span>
           </div>
 

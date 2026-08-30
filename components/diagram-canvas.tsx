@@ -7,10 +7,11 @@ import {
   displayTex,
   getArrowGeometry,
   getCellGeometry,
+  matrixAxes,
   nodeMetrics,
   SCENE_HEIGHT,
   SCENE_WIDTH,
-  snap,
+  snapPointToMatrix,
   type ArrowId,
   type DiagramDocument,
   type NodeId,
@@ -110,6 +111,7 @@ export function DiagramCanvas({
 }: DiagramCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ id: NodeId; pointerId: number } | null>(null);
+  const grid = matrixAxes(doc, true);
 
   const clientToScene = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -127,9 +129,10 @@ export function DiagramCanvas({
     const move = (event: PointerEvent) => {
       if (event.pointerId !== drag.pointerId) return;
       const point = clientToScene(event.clientX, event.clientY);
+      const snapped = snapPointToMatrix(doc, point);
       onMoveNode(drag.id, {
-        x: Math.max(40, Math.min(SCENE_WIDTH - 40, snap(point.x))),
-        y: Math.max(40, Math.min(SCENE_HEIGHT - 40, snap(point.y))),
+        x: Math.max(40, Math.min(SCENE_WIDTH - 40, snapped.x)),
+        y: Math.max(40, Math.min(SCENE_HEIGHT - 40, snapped.y)),
       });
     };
     const end = (event: PointerEvent) => {
@@ -145,7 +148,7 @@ export function DiagramCanvas({
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
     };
-  }, [drag, onEndNodeDrag, onMoveNode]);
+  }, [doc, drag, onEndNodeDrag, onMoveNode]);
 
   return (
     <svg
@@ -214,6 +217,49 @@ export function DiagramCanvas({
         fill="transparent"
         pointerEvents="all"
       />
+
+      {grid.columns.length > 0 && grid.rows.length > 0 && (
+        <g aria-label="Xy-pic matrix grid" pointerEvents="none">
+          {grid.rows.map((y) => (
+            <line
+              key={`row-${y}`}
+              x1={grid.columns[0]}
+              y1={y}
+              x2={grid.columns.at(-1)}
+              y2={y}
+              stroke="#5b5360"
+              strokeWidth="1"
+              strokeDasharray="2 10"
+              opacity=".1"
+            />
+          ))}
+          {grid.columns.map((x) => (
+            <line
+              key={`column-${x}`}
+              x1={x}
+              y1={grid.rows[0]}
+              x2={x}
+              y2={grid.rows.at(-1)}
+              stroke="#5b5360"
+              strokeWidth="1"
+              strokeDasharray="2 10"
+              opacity=".1"
+            />
+          ))}
+          {grid.rows.flatMap((y) =>
+            grid.columns.map((x) => (
+              <circle
+                key={`${x}-${y}`}
+                cx={x}
+                cy={y}
+                r="2.1"
+                fill="#675d68"
+                opacity=".32"
+              />
+            )),
+          )}
+        </g>
+      )}
 
       <g aria-label="1-cells">
         {doc.arrows.map((arrow) => {

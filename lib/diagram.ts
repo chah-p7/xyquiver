@@ -39,10 +39,16 @@ export interface DiagramTwoCell {
   color: string;
 }
 
+export interface DiagramGrid {
+  columns: number[];
+  rows: number[];
+}
+
 export interface DiagramDocument {
   format: 'xyquiver';
   version: 1;
   title: string;
+  grid?: DiagramGrid;
   nodes: DiagramNode[];
   arrows: DiagramArrow[];
   cells: DiagramTwoCell[];
@@ -71,6 +77,10 @@ export interface ExportResult {
 export const SCENE_WIDTH = 1000;
 export const SCENE_HEIGHT = 650;
 export const SNAP = 40;
+export const DEFAULT_MATRIX_GRID: DiagramGrid = {
+  columns: [120, 310, 500, 690, 880],
+  rows: [90, 210, 330, 450, 570],
+};
 
 const greek: Record<string, string> = {
   alpha: 'α',
@@ -175,6 +185,31 @@ export function displayTex(value: string): string {
 
 export function snap(value: number): number {
   return Math.round(value / SNAP) * SNAP;
+}
+
+function nearest(value: number, candidates: number[]): number {
+  return candidates.reduce((best, candidate) =>
+    Math.abs(candidate - value) < Math.abs(best - value) ? candidate : best,
+  );
+}
+
+export function matrixAxes(doc: DiagramDocument, fallback = false): DiagramGrid {
+  const base = doc.grid ?? (fallback ? DEFAULT_MATRIX_GRID : undefined);
+  const columns = [...new Set([...(base?.columns ?? []), ...doc.nodes.map((node) => node.x)])]
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  const rows = [...new Set([...(base?.rows ?? []), ...doc.nodes.map((node) => node.y)])]
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  return { columns, rows };
+}
+
+export function snapPointToMatrix(doc: DiagramDocument, point: Point): Point {
+  const axes = matrixAxes(doc, true);
+  return {
+    x: axes.columns.length ? nearest(point.x, axes.columns) : snap(point.x),
+    y: axes.rows.length ? nearest(point.y, axes.rows) : snap(point.y),
+  };
 }
 
 export function nodeMetrics(node: DiagramNode) {
@@ -543,8 +578,9 @@ export function generateXyPic(
       warnings,
     };
   }
-  const xs = [...new Set(doc.nodes.map((node) => node.x))].sort((a, b) => a - b);
-  const ys = [...new Set(doc.nodes.map((node) => node.y))].sort((a, b) => a - b);
+  const axes = matrixAxes(doc);
+  const xs = axes.columns;
+  const ys = axes.rows;
   const commands = new Map<NodeId, string[]>();
   const consumedArrows = new Set<ArrowId>();
 
@@ -653,10 +689,14 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 1,
     title: 'Pasting of 2-cells',
+    grid: {
+      columns: [...DEFAULT_MATRIX_GRID.columns],
+      rows: [...DEFAULT_MATRIX_GRID.rows],
+    },
     nodes: [
-      node('p-c', '\\mathcal{C}', 160, 450),
-      node('p-d', '\\mathcal{D}', 500, 120),
-      node('p-e', '\\mathcal{E}', 840, 450),
+      node('p-c', '\\mathcal{C}', 120, 450),
+      node('p-d', '\\mathcal{D}', 500, 90),
+      node('p-e', '\\mathcal{E}', 880, 450),
     ],
     arrows: [
       arrow('p-f', 'p-c', 'p-d', 'F', 96),
@@ -696,6 +736,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 1,
     title: 'Native 2-cell',
+    grid: { columns: [220, 500, 780], rows: [140, 300, 460] },
     nodes: [node('n-a', '\\mathcal{C}', 220, 300), node('n-b', '\\mathcal{D}', 780, 300)],
     arrows: [
       arrow('a-f', 'n-a', 'n-b', 'F', 72),
@@ -715,6 +756,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 1,
     title: 'Parallel deformation arrows',
+    grid: { columns: [190, 460, 735], rows: [150, 310, 470] },
     nodes: [
       node('n-c', 'C', 190, 310),
       node('n-cp', "C'_i=C+d\\rho_2=C+d\\rho'_2", 735, 310),
@@ -747,6 +789,10 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 1,
     title: 'Homotopy stabilization',
+    grid: {
+      columns: [150, 325, 500, 675, 850],
+      rows: [105, 175, 330, 570],
+    },
     nodes: [
       node('n-xl', 'X', 150, 105),
       node('n-xr', 'X', 850, 105),
@@ -773,6 +819,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 1,
     title: 'Snake lemma',
+    grid: { columns: [90, 280, 500, 720, 910], rows: [190, 430] },
     nodes: [
       node('s-01', '0', 90, 190),
       node('s-a1', "A'", 280, 190),
@@ -808,6 +855,10 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 1,
     title: 'Untitled diagram',
+    grid: {
+      columns: [...DEFAULT_MATRIX_GRID.columns],
+      rows: [...DEFAULT_MATRIX_GRID.rows],
+    },
     nodes: [],
     arrows: [],
     cells: [],
@@ -855,7 +906,16 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       typeof item.targetArrow === 'string' &&
       typeof item.label === 'string',
   );
-  return nodesValid && arrowsValid && cellsValid
+  const gridValid =
+    candidate.grid === undefined ||
+    (candidate.grid !== null &&
+      Array.isArray(candidate.grid.columns) &&
+      candidate.grid.columns.length > 0 &&
+      candidate.grid.columns.every(Number.isFinite) &&
+      Array.isArray(candidate.grid.rows) &&
+      candidate.grid.rows.length > 0 &&
+      candidate.grid.rows.every(Number.isFinite));
+  return nodesValid && arrowsValid && cellsValid && gridValid
     ? (cloneDocument(candidate as DiagramDocument) as DiagramDocument)
     : null;
 }

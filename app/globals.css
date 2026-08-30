@@ -139,11 +139,7 @@ body {
 
 @utility bg-canvas-grid {
   background-color: #fbfaf7;
-  background-image:
-    linear-gradient(rgb(47 49 66 / 2.5%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(47 49 66 / 2.5%) 1px, transparent 1px),
-    radial-gradient(circle, rgb(47 49 66 / 10%) 0.7px, transparent 0.85px);
-  background-size: 120px 120px, 120px 120px, 20px 20px;
+  background-image: radial-gradient(circle at 50% 35%, #ffffff 0, transparent 72%);
 }
 
 .paint-order-stroke {
