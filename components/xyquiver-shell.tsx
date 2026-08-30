@@ -12,15 +12,17 @@ import {
   ArrowLeftRight,
   ArrowRight,
   Braces,
-  Check,
   ChevronDown,
   CirclePlus,
+  Code2,
   Copy,
   Download,
   FileJson,
   FolderOpen,
   MousePointer2,
+  PanelBottomClose,
   Redo2,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Undo2,
@@ -42,13 +44,20 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -93,6 +102,7 @@ const tools: Array<{
 ];
 
 const examples = [
+  { id: 'showcase', label: 'Pasting of 2-cells' },
   { id: 'twocell', label: 'Native 2-cell' },
   { id: 'parallel', label: 'Parallel deformation arrows' },
   { id: 'homotopy', label: 'Homotopy stabilization' },
@@ -100,7 +110,7 @@ const examples = [
   { id: 'blank', label: 'Blank diagram' },
 ] as const;
 
-const storageKey = 'xyquiver:document:v1';
+const storageKey = 'xyquiver:document:v3';
 const greekLabels = ['\\alpha', '\\beta', '\\gamma', '\\delta', '\\eta'];
 const arrowLabels = ['F', 'G', 'H', 'K', 'L', 'M'];
 
@@ -190,33 +200,16 @@ function Inspector({
 
   if (!selection || (!node && !arrow && !cell)) {
     return (
-      <div className="space-y-5 p-4 text-xs leading-relaxed text-muted-foreground">
-        <div className="rounded-xl border bg-muted/45 p-3">
-          <p className="mb-1 font-medium text-foreground">Start drawing</p>
-          <p>
-            Choose Object, 1-cell, or 2-cell. For a native 2-cell, select two
-            parallel arrows in order.
+      <div className="grid min-h-72 place-items-center p-7 text-center">
+        <div className="max-w-52 text-muted-foreground">
+          <div className="mx-auto mb-4 grid size-10 place-items-center rounded-full border bg-muted/35">
+            <MousePointer2 className="size-4" />
+          </div>
+          <p className="text-sm font-medium text-foreground">Nothing selected</p>
+          <p className="mt-1.5 text-xs leading-relaxed">
+            Select an object, arrow, or 2-cell to edit its LaTeX and geometry.
           </p>
-        </div>
-        <div className="space-y-2">
-          <p className="font-medium text-foreground">Fast path</p>
-          <ol className="list-inside list-decimal space-y-1.5">
-            <li>Click Object twice</li>
-            <li>Select 1-cell, then the two objects</li>
-            <li>Repeat for a parallel arrow</li>
-            <li>Select 2-cell, then both arrows</li>
-          </ol>
-        </div>
-        <Separator />
-        <div className="grid grid-cols-[1fr_auto] gap-y-2">
-          <span>Select</span>
-          <kbd className="rounded border bg-card px-1.5 font-mono">V</kbd>
-          <span>Object</span>
-          <kbd className="rounded border bg-card px-1.5 font-mono">O</kbd>
-          <span>1-cell</span>
-          <kbd className="rounded border bg-card px-1.5 font-mono">A</kbd>
-          <span>2-cell</span>
-          <kbd className="rounded border bg-card px-1.5 font-mono">T</kbd>
+          <p className="mt-4 font-mono text-[10px] tracking-wide">V · O · A · T</p>
         </div>
       </div>
     );
@@ -586,14 +579,12 @@ function ExportDialog({
 export function XyQuiverShell() {
   const [history, setHistory] = useState<HistoryState>(() => ({
     past: [],
-    present: cloneDocument(exampleDocuments.twocell),
+    present: cloneDocument(exampleDocuments.showcase),
     future: [],
   }));
   const [tool, setTool] = useState<EditorTool>('select');
-  const [selection, setSelection] = useState<Selection | null>({
-    kind: 'cell',
-    id: 'c-alpha',
-  });
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [codeOpen, setCodeOpen] = useState(false);
   const [pendingNode, setPendingNode] = useState<NodeId | null>(null);
   const [pendingArrow, setPendingArrow] = useState<ArrowId | null>(null);
   const [status, setStatus] = useState('Ready.');
@@ -974,24 +965,19 @@ export function XyQuiverShell() {
   };
 
   return (
-    <main className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-13 shrink-0 items-center gap-2 border-b bg-card px-3 shadow-[0_1px_0_rgb(23_29_39/3%)]">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground shadow-sm">
-            XY
+    <main className="flex h-dvh min-h-[560px] flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card/95 px-3 shadow-[0_1px_8px_rgb(36_31_27/4%)] backdrop-blur">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="font-serif text-xl italic tracking-[-0.08em] text-primary" aria-hidden="true">
+            xy
           </div>
           <div className="min-w-0 leading-tight">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-sm font-semibold tracking-[-0.01em]">
-                XyQuiver
-              </h1>
-              <Badge variant="secondary" className="hidden xl:inline-flex">
-                native 2-cells
-              </Badge>
-            </div>
-            <p className="max-w-48 truncate text-[10px] text-muted-foreground">
-              {doc.title}
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              XyQuiver
             </p>
+            <h1 className="max-w-44 truncate text-sm font-medium tracking-[-0.01em] sm:max-w-64">
+              {doc.title}
+            </h1>
           </div>
         </div>
 
@@ -1003,7 +989,6 @@ export function XyQuiverShell() {
             <ChevronDown data-icon="inline-end" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel>Diagrams</DropdownMenuLabel>
             {examples.map((example) => (
               <DropdownMenuItem
                 key={example.id}
@@ -1048,20 +1033,58 @@ export function XyQuiverShell() {
           </Button>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="hidden items-center gap-1.5 text-[11px] text-muted-foreground lg:flex">
-            <Check className="size-3.5 text-emerald-600" />
-            Saved locally
-          </div>
+        <div className="ml-auto flex items-center gap-1.5">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="hidden md:inline-flex"
+            className="hidden lg:inline-flex"
             onClick={copyXyPic}
           >
             <Copy data-icon="inline-start" />
             Copy Xy-pic
           </Button>
+          <Button
+            variant={codeOpen ? 'secondary' : 'ghost'}
+            size="sm"
+            aria-pressed={codeOpen}
+            onClick={() => setCodeOpen((open) => !open)}
+          >
+            <Code2 data-icon="inline-start" />
+            <span className="hidden sm:inline">Code</span>
+          </Button>
+          <Sheet>
+            <SheetTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Open inspector"
+                  title="Inspector"
+                />
+              }
+            >
+              <SlidersHorizontal data-icon="inline-start" />
+              <span className="hidden md:inline">Inspect</span>
+            </SheetTrigger>
+            <SheetContent className="gap-0 overflow-hidden bg-card sm:max-w-[340px]">
+              <SheetHeader className="border-b pr-12">
+                <SheetTitle>Inspector</SheetTitle>
+                <SheetDescription>
+                  Edit the selected cell without shrinking the canvas.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <Inspector
+                  doc={doc}
+                  selection={selection}
+                  onPatchNode={patchNode}
+                  onPatchArrow={patchArrow}
+                  onPatchCell={patchCell}
+                  onDelete={deleteSelected}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
           <ExportDialog doc={doc} onStatus={setStatus} />
         </div>
         <input
@@ -1073,10 +1096,57 @@ export function XyQuiverShell() {
         />
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[52px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_178px] md:grid-cols-[52px_minmax(0,1fr)_280px]">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-canvas-grid">
+        <section className="absolute inset-0" aria-label="Diagram editor">
+          <div className="absolute left-[78px] top-4 z-10 hidden items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground sm:flex">
+            <span className="font-semibold text-foreground">
+              {tool === 'select'
+                ? 'Select'
+                : tool === 'object'
+                  ? 'Place object'
+                  : tool === 'arrow'
+                    ? pendingNode
+                      ? 'Choose target'
+                      : 'Choose source'
+                    : pendingArrow
+                      ? 'Choose target 1-cell'
+                      : 'Choose source 1-cell'}
+            </span>
+            <span className="text-border">/</span>
+            <span>
+              {doc.nodes.length} objects · {doc.arrows.length} arrows · {doc.cells.length} 2-cells
+            </span>
+          </div>
+
+          <DiagramCanvas
+            doc={doc}
+            selection={selection}
+            tool={tool}
+            pendingNode={pendingNode}
+            pendingArrow={pendingArrow}
+            onCanvasPoint={(point) => {
+              if (tool === 'object') addNode(point);
+              else if (tool !== 'select') {
+                setPendingNode(null);
+                setPendingArrow(null);
+              }
+            }}
+            onSelect={setSelection}
+            onNodeAction={handleNodeAction}
+            onArrowAction={handleArrowAction}
+            onBeginNodeDrag={beginNodeDrag}
+            onMoveNode={moveNode}
+            onEndNodeDrag={endNodeDrag}
+          />
+
+          <div className="pointer-events-none absolute bottom-3 left-[78px] z-10 max-w-[52vw] truncate rounded-md border bg-card/88 px-2.5 py-1.5 text-[10px] text-muted-foreground shadow-sm backdrop-blur">
+            {status}
+          </div>
+        </section>
+
         <nav
           aria-label="Diagram tools"
-          className="row-span-2 flex flex-col items-center gap-1 border-r bg-card py-3"
+          className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border bg-card/92 p-1.5 shadow-[0_8px_28px_rgb(45_37_32/10%)] backdrop-blur"
         >
           {tools.map(({ id, label, key, icon: Icon }) => (
             <Button
@@ -1085,7 +1155,7 @@ export function XyQuiverShell() {
               size="icon-lg"
               className={
                 tool === id
-                  ? 'relative text-primary shadow-[inset_3px_0_0_var(--primary)]'
+                  ? 'bg-accent text-primary shadow-none'
                   : 'text-muted-foreground'
               }
               aria-label={`${label} tool`}
@@ -1112,87 +1182,9 @@ export function XyQuiverShell() {
           </div>
         </nav>
 
+        {codeOpen && (
         <section
-          className="relative min-h-0 overflow-hidden bg-canvas-grid"
-          aria-label="Diagram editor"
-        >
-          <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-lg border bg-card/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
-            <span className="font-medium text-foreground">
-              {tool === 'select'
-                ? 'Select'
-                : tool === 'object'
-                  ? 'Place object'
-                  : tool === 'arrow'
-                    ? pendingNode
-                      ? 'Choose target'
-                      : 'Choose source'
-                    : pendingArrow
-                      ? 'Choose target 1-cell'
-                      : 'Choose source 1-cell'}
-            </span>
-            <span>·</span>
-            <span>
-              {doc.nodes.length} objects · {doc.arrows.length} arrows ·{' '}
-              {doc.cells.length} 2-cells
-            </span>
-          </div>
-
-          <DiagramCanvas
-            doc={doc}
-            selection={selection}
-            tool={tool}
-            pendingNode={pendingNode}
-            pendingArrow={pendingArrow}
-            onCanvasPoint={(point) => {
-              if (tool === 'object') addNode(point);
-              else if (tool !== 'select') {
-                setPendingNode(null);
-                setPendingArrow(null);
-              }
-            }}
-            onSelect={setSelection}
-            onNodeAction={handleNodeAction}
-            onArrowAction={handleArrowAction}
-            onBeginNodeDrag={beginNodeDrag}
-            onMoveNode={moveNode}
-            onEndNodeDrag={endNodeDrag}
-          />
-
-          <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-card/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
-            {tool === 'select'
-              ? 'Drag objects · Delete removes the selection'
-              : tool === 'object'
-                ? 'Click an empty grid position'
-                : tool === 'arrow'
-                  ? 'Select source object, then target object'
-                  : 'Select two parallel arrows for a native 2-cell'}
-          </div>
-        </section>
-
-        <aside
-          className="row-span-2 hidden min-h-0 overflow-auto border-l bg-card md:block"
-          aria-label="Inspector"
-        >
-          <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b bg-card px-4">
-            <h2 className="text-xs font-semibold">Inspector</h2>
-            {typora.warnings.length > 0 ? (
-              <Badge variant="destructive">{typora.warnings.length} warning</Badge>
-            ) : (
-              <Badge variant="outline">lossless XY</Badge>
-            )}
-          </div>
-          <Inspector
-            doc={doc}
-            selection={selection}
-            onPatchNode={patchNode}
-            onPatchArrow={patchArrow}
-            onPatchCell={patchCell}
-            onDelete={deleteSelected}
-          />
-        </aside>
-
-        <section
-          className="min-h-0 border-t bg-[#121721] text-slate-100"
+          className="absolute bottom-3 left-[72px] right-3 z-30 h-[220px] overflow-hidden rounded-xl border border-[#312d36] bg-[#18171d] text-slate-100 shadow-[0_20px_60px_rgb(25_20_27/24%)]"
           aria-label="Generated code"
         >
           <Tabs defaultValue="typora" className="h-full gap-0">
@@ -1217,6 +1209,15 @@ export function XyQuiverShell() {
               >
                 XyJax compatible
               </Badge>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="ml-1 text-slate-400 hover:bg-white/8 hover:text-white"
+                aria-label="Close code panel"
+                onClick={() => setCodeOpen(false)}
+              >
+                <PanelBottomClose />
+              </Button>
             </div>
             <TabsContent value="typora" className="min-h-0 overflow-auto p-3">
               <pre className="font-mono text-[11px] leading-5 text-slate-300">
@@ -1245,14 +1246,12 @@ export function XyQuiverShell() {
             </TabsContent>
           </Tabs>
         </section>
+        )}
       </div>
 
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {status}
       </output>
-      <div className="pointer-events-none fixed bottom-3 right-3 z-40 hidden max-w-sm rounded-lg border bg-card/95 px-3 py-2 text-[11px] text-muted-foreground shadow-lg backdrop-blur xl:block">
-        {status}
-      </div>
     </main>
   );
 }

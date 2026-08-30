@@ -158,6 +158,8 @@ export function displayTex(value: string): string {
       mapsto: '↦',
       nabla: '∇',
       cdot: '·',
+      circ: '∘',
+      ast: '∗',
       Rightarrow: '⇒',
       leftarrow: '←',
     };
@@ -179,8 +181,8 @@ export function nodeMetrics(node: DiagramNode) {
   if (node.ghost) return { width: 14, height: 14 };
   const label = displayTex(node.label);
   return {
-    width: Math.min(280, Math.max(46, label.length * 9.2 + 24)),
-    height: 42,
+    width: Math.min(280, Math.max(34, label.length * 9 + 18)),
+    height: 34,
   };
 }
 
@@ -276,8 +278,8 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
   const to = targetGeometry.midpoint;
   const direction = normalize({ x: to.x - from.x, y: to.y - from.y });
   const normal = { x: direction.y, y: -direction.x };
-  const start = { x: from.x + direction.x * 8, y: from.y + direction.y * 8 };
-  const end = { x: to.x - direction.x * 11, y: to.y - direction.y * 11 };
+  const start = { x: from.x + direction.x * 5, y: from.y + direction.y * 5 };
+  const end = { x: to.x - direction.x * 5, y: to.y - direction.y * 5 };
   const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
   return { start, end, midpoint, direction, normal };
 }
@@ -438,16 +440,29 @@ export function generateSvg(
       if (!geometry) return '';
       const color = colorOrDefault(cell.color, '#5b4bc4');
       const offset = geometry.normal;
-      const line = (amount: number, marker: boolean) => {
+      const shaftEnd = {
+        x: geometry.end.x - geometry.direction.x * 7,
+        y: geometry.end.y - geometry.direction.y * 7,
+      };
+      const wingA = {
+        x: shaftEnd.x + geometry.normal.x * 5,
+        y: shaftEnd.y + geometry.normal.y * 5,
+      };
+      const wingB = {
+        x: shaftEnd.x - geometry.normal.x * 5,
+        y: shaftEnd.y - geometry.normal.y * 5,
+      };
+      const line = (amount: number) => {
         const x1 = geometry.start.x + offset.x * amount;
         const y1 = geometry.start.y + offset.y * amount;
-        const x2 = geometry.end.x + offset.x * amount;
-        const y2 = geometry.end.y + offset.y * amount;
-        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.8"${marker ? ` marker-end="url(#${prefix}-cell)"` : ''}/>`;
+        const x2 = shaftEnd.x + offset.x * amount;
+        const y2 = shaftEnd.y + offset.y * amount;
+        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round"/>`;
       };
+      const head = `<path d="M ${round(wingA.x)} ${round(wingA.y)} L ${round(geometry.end.x)} ${round(geometry.end.y)} L ${round(wingB.x)} ${round(wingB.y)}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
       const labelX = geometry.midpoint.x + geometry.normal.x * 17;
       const labelY = geometry.midpoint.y + geometry.normal.y * 17;
-      return `${line(-2.3, false)}${line(2.3, true)}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="17" fill="${color}" stroke="#ffffff" stroke-width="5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
+      return `${line(-2.6)}${line(2.6)}${head}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="17" fill="${color}" stroke="#ffffff" stroke-width="5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
     })
     .join('');
   const nodeMarkup = doc.nodes
@@ -457,7 +472,7 @@ export function generateSvg(
         `<text x="${round(node.x)}" y="${round(node.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="21" font-weight="500" fill="#111827" stroke="#ffffff" stroke-width="7" paint-order="stroke fill">${xml(displayTex(node.label))}</text>`,
     )
     .join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" width="${bounds.width}" height="${bounds.height}" role="img"><title>${xml(doc.title || 'XyQuiver diagram')}</title><desc>Categorical diagram exported as editable vector paths and text by XyQuiver.</desc><defs><marker id="${prefix}-arrow" viewBox="-10 -5 10 10" refX="0" refY="0" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -9 -5 L 0 0 L -9 5 Z" fill="#1f2937"/></marker><marker id="${prefix}-twohead" viewBox="-14 -6 14 12" refX="0" refY="0" markerWidth="14" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -8 -5 L 0 0 L -8 5 M -13 -5 L -5 0 L -13 5" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-hook" viewBox="0 -7 12 14" refX="0" refY="0" markerWidth="12" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 0 0 C 0 -6 7 -6 8 -2" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-mapsto" viewBox="0 -7 8 14" refX="0" refY="0" markerWidth="8" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 1 -6 L 1 6" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-cell" viewBox="-9 -5 9 10" refX="0" refY="0" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -8 -5 L 0 0 L -8 5 Z" fill="#5b4bc4"/></marker></defs>${background}<g>${arrowMarkup}</g><g>${cellMarkup}</g><g>${nodeMarkup}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" width="${bounds.width}" height="${bounds.height}" role="img"><title>${xml(doc.title || 'XyQuiver diagram')}</title><desc>Categorical diagram exported as editable vector paths and text by XyQuiver.</desc><defs><marker id="${prefix}-arrow" viewBox="-10 -5 10 10" refX="0" refY="0" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -9 -5 L 0 0 L -9 5 Z" fill="#1f2937"/></marker><marker id="${prefix}-twohead" viewBox="-14 -6 14 12" refX="0" refY="0" markerWidth="14" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -8 -5 L 0 0 L -8 5 M -13 -5 L -5 0 L -13 5" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-hook" viewBox="0 -7 12 14" refX="0" refY="0" markerWidth="12" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 0 0 C 0 -6 7 -6 8 -2" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-mapsto" viewBox="0 -7 8 14" refX="0" refY="0" markerWidth="8" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 1 -6 L 1 6" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker></defs>${background}<g>${arrowMarkup}</g><g>${cellMarkup}</g><g>${nodeMarkup}</g></svg>`;
 }
 
 function safeTex(value: string): string {
@@ -634,6 +649,49 @@ function arrow(
 }
 
 export const exampleDocuments: Record<string, DiagramDocument> = {
+  showcase: {
+    format: 'xyquiver',
+    version: 1,
+    title: 'Pasting of 2-cells',
+    nodes: [
+      node('p-c', '\\mathcal{C}', 160, 450),
+      node('p-d', '\\mathcal{D}', 500, 120),
+      node('p-e', '\\mathcal{E}', 840, 450),
+    ],
+    arrows: [
+      arrow('p-f', 'p-c', 'p-d', 'F', 96),
+      arrow('p-fp', 'p-c', 'p-d', "F'", -96, { labelSide: 'right' }),
+      arrow('p-g', 'p-d', 'p-e', 'G', 96),
+      arrow('p-gp', 'p-d', 'p-e', "G'", -96, { labelSide: 'right' }),
+      arrow('p-gf', 'p-c', 'p-e', 'G\\circ F', -40),
+      arrow('p-gpfp', 'p-c', 'p-e', "G'\\circ F'", -190, {
+        labelSide: 'right',
+      }),
+    ],
+    cells: [
+      {
+        id: 'p-alpha',
+        sourceArrow: 'p-f',
+        targetArrow: 'p-fp',
+        label: '\\alpha',
+        color: '#4f46a5',
+      },
+      {
+        id: 'p-beta',
+        sourceArrow: 'p-g',
+        targetArrow: 'p-gp',
+        label: '\\beta',
+        color: '#4f46a5',
+      },
+      {
+        id: 'p-paste',
+        sourceArrow: 'p-gf',
+        targetArrow: 'p-gpfp',
+        label: '\\beta\\ast\\alpha',
+        color: '#4f46a5',
+      },
+    ],
+  },
   twocell: {
     format: 'xyquiver',
     version: 1,

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
+import 'katex/dist/katex.min.css';
 import './globals.css';
 
 const geistSans = Geist({
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('http://localhost:3000'),
+  metadataBase: new URL('https://xyquiver.sirinsec.chatgpt.site'),
   title: 'XyQuiver — Xy-pic diagram editor',
   description:
     'Draw categorical diagrams and native 2-cells, then export Typora-ready Xy-pic or SVG.',
