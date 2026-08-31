@@ -105,7 +105,7 @@ import {
   type Selection,
 } from '@/lib/diagram';
 import { localizedDocumentTitle, ui, useUiLanguage } from '@/lib/i18n';
-import { renderXyPicSvg } from '@/lib/xyjax-svg';
+import { preloadXyJax, renderXyPicSvg } from '@/lib/xyjax-svg';
 
 interface HistoryState {
   past: DiagramDocument[];
@@ -382,9 +382,9 @@ function Inspector({
             </div>
             <Slider
               value={[arrow.curve]}
-              min={-190}
-              max={190}
-              step={2}
+              min={-220}
+              max={220}
+              step={1}
               onValueChange={(value) => {
                 const next = Array.isArray(value) ? value[0] : value;
                 onPatchArrow(arrow.id, { curve: snapCurveLevel(Number(next)) });
@@ -586,13 +586,24 @@ function ExportDialog({
   const json = useMemo(() => JSON.stringify(doc, null, 2), [doc]);
 
   useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      void preloadXyJax().catch(() => {
+        // The export tab reports a useful error if the optional renderer is
+        // still unavailable when the user actually asks for it.
+      });
+    }, 700);
+    return () => window.clearTimeout(preloadTimer);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    const loadingFrame = window.requestAnimationFrame(() => {
+    let settled = false;
+    const loadingTimer = window.setTimeout(() => {
       if (cancelled) return;
       setSvgLoading(true);
       setSvgError('');
-    });
+    }, 120);
     void renderXyPicSvg(nativeXy.text, {
       background,
       title: doc.title || 'XyQuiver diagram',
@@ -608,11 +619,13 @@ function ExportDialog({
         setSvgError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
+        settled = true;
+        window.clearTimeout(loadingTimer);
         if (!cancelled) setSvgLoading(false);
       });
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(loadingFrame);
+      if (!settled) window.clearTimeout(loadingTimer);
     };
   }, [background, doc.title, nativeXy.text, open]);
 
@@ -642,10 +655,7 @@ function ExportDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (nextOpen && !svg) {
-          setSvgLoading(true);
-          setSvgError('');
-        }
+        if (nextOpen) setSvgError('');
       }}
     >
       <DialogTrigger render={<Button size="sm" />}>

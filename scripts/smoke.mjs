@@ -18,6 +18,7 @@ import {
   normalizeMathTex,
   resolveConnectionLevel,
   sceneGridEdges,
+  snapCurveLevel,
   validateDocument,
 } from '../lib/diagram.ts';
 import { localizedDocumentTitle } from '../lib/i18n.ts';
@@ -244,6 +245,7 @@ if (
   !snake.nodes.some((node) => node.label === '\\operatorname{coker} f') ||
   connectingMap?.source !== 's-ker-h' ||
   connectingMap.target !== 's-coker-f' ||
+  connectingMap.curve !== 180 ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
   !homotopyXy.includes('@C=1.2pc @R=1.2pc') ||
@@ -437,6 +439,9 @@ const nativeCurves = JSON.parse(JSON.stringify(exampleDocuments.twocell));
 nativeCurves.arrows.find((arrow) => arrow.id === 'a-g').curve = 220;
 if (constrainArrowCurve(nativeCurves, 'a-f', 220) !== 180) {
   throw new Error('curve constraint: failed at the positive boundary');
+}
+if (snapCurveLevel(205) !== 220 || snapCurveLevel(-205) !== -220) {
+  throw new Error('curve snapping: outer fixed levels regressed');
 }
 if (
   cellCreationConflict(

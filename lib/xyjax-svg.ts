@@ -17,6 +17,8 @@ type MathJaxWindow = Window & {
 };
 
 let runtimePromise: Promise<MathJaxRuntime> | null = null;
+const baseSvgCache = new Map<string, Promise<string>>();
+const BASE_SVG_CACHE_LIMIT = 8;
 
 function currentRuntime(): MathJaxRuntime | null {
   if (typeof window === 'undefined') return null;
@@ -90,6 +92,10 @@ async function ensureXyJax(): Promise<MathJaxRuntime> {
   });
 
   return runtimePromise;
+}
+
+export function preloadXyJax(): Promise<void> {
+  return ensureXyJax().then(() => undefined);
 }
 
 function sanitizeSvg(svg: SVGSVGElement) {
@@ -227,10 +233,7 @@ function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 48) {
   }
 }
 
-export async function renderXyPicSvg(
-  source: string,
-  options: { background?: boolean; title?: string } = {},
-): Promise<string> {
+async function renderBaseXyPicSvg(source: string): Promise<string> {
   const runtime = await ensureXyJax();
   const container = await runtime.tex2svgPromise(source, { display: true });
   const rendered = container.querySelector('svg');
@@ -250,12 +253,52 @@ export async function renderXyPicSvg(
   svg.setAttribute('role', 'img');
   svg.setAttribute('color', '#111827');
   fitViewBoxToRenderedContent(svg);
+
+  return new XMLSerializer().serializeToString(svg);
+}
+
+function cachedBaseSvg(source: string): Promise<string> {
+  const cached = baseSvgCache.get(source);
+  if (cached) {
+    // Refresh insertion order so the small cache behaves like an LRU.
+    baseSvgCache.delete(source);
+    baseSvgCache.set(source, cached);
+    return cached;
+  }
+
+  const pending = renderBaseXyPicSvg(source).catch((error) => {
+    baseSvgCache.delete(source);
+    throw error;
+  });
+  baseSvgCache.set(source, pending);
+  while (baseSvgCache.size > BASE_SVG_CACHE_LIMIT) {
+    const oldest = baseSvgCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    baseSvgCache.delete(oldest);
+  }
+  return pending;
+}
+
+function decorateSvg(
+  serialized: string,
+  options: { background?: boolean; title?: string },
+): string {
+  if (!options.background && !options.title) return serialized;
+  const parsed = new DOMParser().parseFromString(serialized, 'image/svg+xml');
+  const svg = parsed.documentElement;
+  if (!(svg instanceof SVGSVGElement)) return serialized;
   if (options.background) addBackground(svg);
   if (options.title) {
     const title = document.createElementNS(SVG_NAMESPACE, 'title');
     title.textContent = options.title;
     svg.insertBefore(title, svg.firstChild);
   }
-
   return new XMLSerializer().serializeToString(svg);
+}
+
+export async function renderXyPicSvg(
+  source: string,
+  options: { background?: boolean; title?: string } = {},
+): Promise<string> {
+  return decorateSvg(await cachedBaseSvg(source), options);
 }

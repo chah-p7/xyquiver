@@ -2158,7 +2158,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
       arrow('s-coker-f-bottom', 's-coker-f', 's-bottom-f', ''),
       arrow('s-coker-g-bottom', 's-coker-g', 's-bottom-g', ''),
       arrow('s-coker-h-bottom', 's-coker-h', 's-bottom-h', ''),
-      arrow('s-delta', 's-ker-h', 's-coker-f', '\\delta', 220),
+      arrow('s-delta', 's-ker-h', 's-coker-f', '\\delta', 180),
     ],
     cells: [],
   },
