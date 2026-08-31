@@ -141,7 +141,7 @@ function resizeLengthAttribute(
   svg.setAttribute(name, `${Number(match[1]) * ratio}${match[2]}`);
 }
 
-function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 120) {
+function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 48) {
   const current = (svg.getAttribute('viewBox') ?? '')
     .trim()
     .split(/\s+/)

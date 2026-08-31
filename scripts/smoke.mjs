@@ -1,6 +1,7 @@
 import {
   alignDocumentToSceneGrid,
   arrowGridAnchors,
+  cellLabelPoint,
   cellCreationConflict,
   constrainArrowCurve,
   deleteSelections,
@@ -59,13 +60,13 @@ if (
 }
 
 if (
-  resolveConnectionLevel('cell', 'node', 'node') !== 'cell' ||
+  resolveConnectionLevel('cell', 'node', 'node') !== 'arrow' ||
   resolveConnectionLevel('arrow', 'node', 'node') !== 'arrow' ||
   resolveConnectionLevel('auto', 'node', 'arrow') !== 'cell' ||
-  resolveConnectionLevel('auto', 'cell', 'cell') !== 'three'
+  resolveConnectionLevel('auto', 'cell', 'cell') !== 'cell'
 ) {
   throw new Error(
-    'connection level: explicit 1-cell/2-cell choice was ignored',
+    'connection form: endpoint kinds did not choose the arrow form',
   );
 }
 
@@ -186,17 +187,17 @@ if (
   parallel.arrows.some((arrow) => arrow.id === 'a-rho0') ||
   parallel.arrows.find((arrow) => arrow.id === 'a-rho1')?.source !== 'n-cp' ||
   parallel.arrows.find((arrow) => arrow.id === 'a-rho1p')?.source !== 'n-cp' ||
-  parallel.cells.filter((cell) => (cell.level ?? 2) === 2).length !== 2 ||
-  parallel.cells.filter((cell) => cell.level === 3).length !== 1 ||
+  parallel.cells.length !== 3 ||
+  parallel.cells.some((cell) => cell.shaft && cell.shaft !== 'double') ||
   !isNativeParallelCell(parallel, parallel.cells[0]) ||
   !isNativeParallelCell(parallel, parallel.cells[1]) ||
   !anchoredParallelXy.includes("\\rlap{C'_i=C+d\\rho_2") ||
   !anchoredParallelXy.includes("=C+d\\rho'_2}\\phantom{C}") ||
   anchoredParallelXy.includes('\\hbox{\\rlap') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  (anchoredParallelXy.match(/\\ar@\/[\^_]0\.53pc\/@\{=>\}/g) ?? [])
+  (anchoredParallelXy.match(/\\ar@\/[\^_]2\.1pc\/@\{=>\}/g) ?? [])
     .length !== 2 ||
-  !anchoredParallelXy.includes('\\ar@{<==}') ||
+  !anchoredParallelXy.includes('\\ar@{<=}') ||
   !anchoredParallelXy.includes('{\\rho_0}')
 ) {
   throw new Error(
@@ -245,7 +246,7 @@ if (
   connectingMap.target !== 's-coker-f' ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@C=0.3pc @R=0.3pc') ||
+  !homotopyXy.includes('@C=1.2pc @R=1.2pc') ||
   !homotopyXy.includes(
     `\\ar[${'r'.repeat(20)}]^{\\overset`,
   ) ||
@@ -273,11 +274,10 @@ const parallelRoundTrip = validateDocument(
 );
 if (
   !parallelRoundTrip ||
-  parallelRoundTrip.cells.filter((cell) => (cell.level ?? 2) === 2).length !==
-    2 ||
-  parallelRoundTrip.cells.filter((cell) => cell.level === 3).length !== 1
+  parallelRoundTrip.cells.length !== 3 ||
+  parallelRoundTrip.cells.some((cell) => cell.shaft !== 'double')
 ) {
-  throw new Error('parallel higher cells: duplicate 2-cells or 3-cell were lost');
+  throw new Error('parallel attached arrows were lost');
 }
 
 const oldDraft = JSON.parse(JSON.stringify(homotopy));
@@ -325,13 +325,56 @@ const quasi = exampleDocuments.quasicategory;
 const quasiXy = generateXyPic(quasi, 'snippet').text;
 if (
   !quasiXy.includes('\\ar@{=>}') ||
-  !quasiXy.includes('^(.35){\\alpha}') ||
+  !quasiXy.includes('|(.5)*+<0pt,-1.2em>{\\alpha}') ||
   !quasiXy.includes('|(0.5)*{}="xyq-a1"') ||
   !quasiXy.includes('\\POS "1,11"')
 ) {
   throw new Error(
     'quasicategory: vertex-to-edge 2-cell was not attached to a named path position',
   );
+}
+const placedLabels = ['top', 'bottom', 'left', 'right'].map((position) => {
+  const placed = JSON.parse(JSON.stringify(quasi));
+  placed.cells[0].labelPosition = position;
+  return generateXyPic(placed, 'snippet').text;
+});
+if (
+  !placedLabels[0].includes('*+<0pt,-1.2em>{\\alpha}') ||
+  !placedLabels[1].includes('*+<0pt,1.2em>{\\alpha}') ||
+  !placedLabels[2].includes('*+<-1.2em,0pt>{\\alpha}') ||
+  !placedLabels[3].includes('*+<1.2em,0pt>{\\alpha}')
+) {
+  throw new Error('attached-arrow labels: four-way Xy-pic placement regressed');
+}
+const singleAttached = JSON.parse(JSON.stringify(quasi));
+singleAttached.cells[0].shaft = 'single';
+const singleAttachedXy = generateXyPic(singleAttached, 'snippet').text;
+const singleAttachedRoundTrip = validateDocument(singleAttached);
+if (
+  !singleAttachedXy.includes('\\ar@{->}') ||
+  singleAttachedXy.includes('\\ar@{=>}') ||
+  singleAttachedRoundTrip?.cells[0].shaft !== 'single'
+) {
+  throw new Error('attached-arrow style: single/double override regressed');
+}
+const quasiGeometry = getCellGeometry(quasi, quasi.cells[0]);
+if (
+  !quasiGeometry ||
+  cellLabelPoint(quasiGeometry, 'top').y >= quasiGeometry.midpoint.y ||
+  cellLabelPoint(quasiGeometry, 'bottom').y <= quasiGeometry.midpoint.y ||
+  cellLabelPoint(quasiGeometry, 'left').x >= quasiGeometry.midpoint.x ||
+  cellLabelPoint(quasiGeometry, 'right').x <= quasiGeometry.midpoint.x
+) {
+  throw new Error('attached-arrow labels: canvas placement regressed');
+}
+const showcaseXy = generateXyPic(exampleDocuments.showcase, 'snippet').text;
+if (
+  showcaseXy.includes('\\UseAllTwocells') ||
+  showcaseXy.includes('\\xtwocell') ||
+  showcaseXy.includes('@{==>}') ||
+  (showcaseXy.match(/@\{=>\}/g) ?? []).length !== 3
+) {
+  throw new Error('attached-arrow export: double arrows were not native Xy paths');
 }
 if (
   quasi.cells[0].sourcePath?.length !== 2 ||

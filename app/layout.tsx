@@ -17,16 +17,16 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://xyquiver.sirinsec.chatgpt.site'),
   title: 'XyQuiver — Xy-pic diagram editor',
   description:
-    'Draw categorical diagrams and native 2-cells, then export Typora-ready Xy-pic or SVG.',
+    'Draw categorical diagrams with ordinary and attached arrows, then export Typora-ready Xy-pic or SVG.',
   openGraph: {
-    title: 'XyQuiver — native 2-cells for Xy-pic',
+    title: 'XyQuiver — attached arrows for Xy-pic',
     description:
       'Draw categorical diagrams and export Typora-ready Xy-pic or standalone SVG.',
     images: [{ url: '/og.png', width: 1672, height: 941, alt: 'XyQuiver editor' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'XyQuiver — native 2-cells for Xy-pic',
+    title: 'XyQuiver — attached arrows for Xy-pic',
     description:
       'Draw categorical diagrams and export Typora-ready Xy-pic or standalone SVG.',
     images: ['/og.png'],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from 'lucide-react';
 
 import { ArrowStylePopover } from '@/components/arrow-style-popover';
 import { CellStylePopover } from '@/components/cell-style-popover';
@@ -8,13 +9,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   normalizeMathTex,
+  resolvedCellLabelPosition,
+  type CellLabelPosition,
   type DiagramArrow,
   type DiagramTwoCell,
 } from '@/lib/diagram';
 import { ui, useUiLanguage } from '@/lib/i18n';
 
 type LabelFace = 'math' | 'upright' | 'bold' | 'italic';
-type DrawLevel = 'auto' | 'arrow' | 'cell' | 'three';
 
 const faceCommands: Record<Exclude<LabelFace, 'math'>, string> = {
   upright: 'mathrm',
@@ -42,7 +44,6 @@ function applyLabelFace(value: string, face: LabelFace) {
 
 export function FloatingCellEditor({
   item,
-  onChangeLevel,
   onCommitLabel,
   onPreviewLabel,
   onPatchArrow,
@@ -51,14 +52,16 @@ export function FloatingCellEditor({
   item:
     | { kind: 'arrow'; value: DiagramArrow }
     | { kind: 'cell'; value: DiagramTwoCell };
-  onChangeLevel: (level: Exclude<DrawLevel, 'auto'>, label: string) => void;
   onCommitLabel: (label: string) => void;
   onPreviewLabel: (label: string | null) => void;
   onPatchArrow?: (patch: Partial<DiagramArrow>) => void;
   onPatchCell?: (patch: Partial<DiagramTwoCell>) => void;
 }) {
   const language = useUiLanguage();
-  const itemLevel = item.kind === 'arrow' ? 1 : (item.value.level ?? 2);
+  const itemLabel =
+    item.kind === 'arrow'
+      ? ui(language, '顶点箭头', 'VERTEX ARROW')
+      : ui(language, '附着箭头', 'ATTACHED ARROW');
   const [draft, setDraft] = useState(item.value.label);
   const draftRef = useRef(item.value.label);
   const skipBlurCommit = useRef(false);
@@ -84,18 +87,18 @@ export function FloatingCellEditor({
         <div className="flex items-center gap-1.5">
           <span
             className={
-              itemLevel >= 2
+              item.kind === 'cell'
                 ? 'rounded bg-indigo-100 px-1.5 py-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-indigo-700'
                 : 'rounded bg-slate-100 px-1.5 py-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-600'
             }
           >
-            {ui(language, `${itemLevel}-胞腔`, `${itemLevel}-CELL`)}
+            {itemLabel}
           </span>
           <Input
             aria-label={ui(
               language,
-              `编辑${itemLevel === 1 ? '一' : itemLevel === 2 ? '二' : '三'}胞腔的 LaTeX 标签`,
-              `Edit ${itemLevel}-cell LaTeX label`,
+              '编辑箭头的 LaTeX 标签',
+              'Edit arrow LaTeX label',
             )}
             title={ui(
               language,
@@ -200,101 +203,49 @@ export function FloatingCellEditor({
               </Button>
             </div>
           )}
+          {item.kind === 'cell' && onPatchCell && (
+            <div
+              className="flex items-center gap-0.5"
+              aria-label={ui(language, '标签位置', 'Label position')}
+            >
+              {(
+                [
+                  ['top', ArrowUp, ui(language, '上方', 'Top')],
+                  ['bottom', ArrowDown, ui(language, '下方', 'Bottom')],
+                  ['left', ArrowLeft, ui(language, '左侧', 'Left')],
+                  ['right', ArrowRight, ui(language, '右侧', 'Right')],
+                ] as const
+              ).map(([position, Icon, title]) => (
+                <Button
+                  key={position}
+                  type="button"
+                  size="icon-xs"
+                  variant={
+                    resolvedCellLabelPosition(item.value) === position
+                      ? 'secondary'
+                      : 'ghost'
+                  }
+                  aria-label={title}
+                  aria-pressed={
+                    resolvedCellLabelPosition(item.value) === position
+                  }
+                  title={title}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() =>
+                    onPatchCell({
+                      labelPosition: position as CellLabelPosition,
+                    })
+                  }
+                >
+                  <Icon className="size-3.5" />
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 rounded-xl border border-[#d9ced6] bg-[#fbfaf7]/97 p-1.5 shadow-[0_8px_24px_rgb(46_29_44/12%)] backdrop-blur">
-        <div
-          className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/65 p-0.5"
-          aria-label={ui(
-            language,
-            '所选连线的层级',
-            'Selected connection level',
-          )}
-        >
-          <Button
-            type="button"
-            size="xs"
-            variant={itemLevel === 1 ? 'secondary' : 'ghost'}
-            className={
-              itemLevel === 1
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : undefined
-            }
-            aria-pressed={itemLevel === 1}
-            title={ui(
-              language,
-              '将当前所选内容转换为一胞腔',
-              'Convert the selected connection to a 1-cell',
-            )}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={() => {
-              if (itemLevel === 1) {
-                commit();
-                return;
-              }
-              onPreviewLabel(null);
-              onChangeLevel('arrow', draftRef.current);
-            }}
-          >
-            {ui(language, '1-胞腔', '1-cell')}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant={itemLevel === 2 ? 'secondary' : 'ghost'}
-            className={
-              itemLevel === 2
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : undefined
-            }
-            aria-pressed={itemLevel === 2}
-            title={ui(
-              language,
-              '将当前所选内容转换为二胞腔',
-              'Convert the selected connection to a 2-cell',
-            )}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={() => {
-              if (itemLevel === 2) {
-                commit();
-                return;
-              }
-              onPreviewLabel(null);
-              onChangeLevel('cell', draftRef.current);
-            }}
-          >
-            {ui(language, '2-胞腔', '2-cell')}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant={itemLevel === 3 ? 'secondary' : 'ghost'}
-            className={
-              itemLevel === 3
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : undefined
-            }
-            aria-pressed={itemLevel === 3}
-            title={ui(
-              language,
-              '三胞腔以两个二胞腔为端点；请从一个二胞腔拖到另一个。',
-              'A 3-cell connects two 2-cells; drag from one 2-cell to another.',
-            )}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={() => {
-              if (itemLevel === 3) {
-                commit();
-                return;
-              }
-              onPreviewLabel(null);
-              onChangeLevel('three', draftRef.current);
-            }}
-          >
-            {ui(language, '3-胞腔', '3-cell')}
-          </Button>
-        </div>
-
+      <div className="flex items-center rounded-xl border border-[#d9ced6] bg-[#fbfaf7]/97 p-1.5 shadow-[0_8px_24px_rgb(46_29_44/12%)] backdrop-blur">
         {item.kind === 'arrow' && onPatchArrow ? (
           <ArrowStylePopover
             arrow={item.value}

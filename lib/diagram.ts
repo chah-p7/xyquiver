@@ -8,7 +8,9 @@ export type ArrowTail = 'none' | 'hook' | 'mapsto';
 export type LabelSide = 'left' | 'right';
 export type CellHead = 'arrow' | 'reverse' | 'equality' | 'none';
 export type CellStroke = 'solid' | 'dashed' | 'dotted' | 'none';
-export type ConnectionLevel = 'auto' | 'arrow' | 'cell' | 'three';
+export type CellShaft = 'single' | 'double';
+export type CellLabelPosition = 'top' | 'bottom' | 'left' | 'right';
+export type ConnectionLevel = 'auto' | 'arrow' | 'cell';
 export type ConnectionAnchorKind = 'point' | 'node' | 'arrow' | 'cell';
 
 export interface Point {
@@ -44,7 +46,7 @@ export type CellAnchor =
 
 export interface DiagramTwoCell {
   id: CellId;
-  /** Omitted in legacy documents; defaults to 2. */
+  /** Legacy import field. Higher arrows are now determined by their anchors. */
   level?: 2 | 3;
   /** Legacy/native parallel-boundary representation. */
   sourceArrow?: ArrowId;
@@ -56,6 +58,10 @@ export interface DiagramTwoCell {
   sourcePath?: ArrowId[];
   targetPath?: ArrowId[];
   label: string;
+  /** Absolute label placement in the editor and all exports. */
+  labelPosition?: CellLabelPosition;
+  /** Visual line count; independent of categorical dimension. */
+  shaft?: CellShaft;
   color: string;
   /** Signed quadratic bend in scene units, matching 1-cell curvature. */
   curve?: number;
@@ -65,6 +71,16 @@ export interface DiagramTwoCell {
 
 export function resolvedCellStroke(cell: DiagramTwoCell): CellStroke {
   return cell.stroke ?? (cell.head === 'none' ? 'none' : 'solid');
+}
+
+export function resolvedCellLabelPosition(
+  cell: DiagramTwoCell,
+): CellLabelPosition {
+  return cell.labelPosition ?? 'top';
+}
+
+export function resolvedCellShaft(cell: DiagramTwoCell): CellShaft {
+  return cell.shaft ?? 'double';
 }
 
 export function resolvedCellHead(
@@ -348,7 +364,10 @@ export function matrixAxes(
   return { columns, rows };
 }
 
-const XY_GRID_UNIT_PC = 0.3;
+// One editor cell is only a little wider than a normal math glyph. Keeping
+// this typographic (rather than pixel-derived) preserves the canvas ratio in
+// Typora and in the native XyJax SVG renderer.
+const XY_GRID_UNIT_PC = 1.2;
 
 function filledLogicalAxis(values: number[]): number[] {
   const points = [...new Set(values)]
@@ -474,13 +493,19 @@ export function matrixCellEdges(
 }
 
 export function resolveConnectionLevel(
-  requested: ConnectionLevel,
+  _requested: ConnectionLevel,
   source: ConnectionAnchorKind,
   target: ConnectionAnchorKind,
 ): Exclude<ConnectionLevel, 'auto'> {
-  if (requested !== 'auto') return requested;
-  if (source === 'cell' || target === 'cell') return 'three';
-  return source === 'arrow' || target === 'arrow' ? 'cell' : 'arrow';
+  // Users draw one kind of connection. Object-to-object connections are
+  // ordinary arrows; attaching either endpoint to an existing arrow produces
+  // the same double-line higher arrow, recursively.
+  return source === 'arrow' ||
+    target === 'arrow' ||
+    source === 'cell' ||
+    target === 'cell'
+    ? 'cell'
+    : 'arrow';
 }
 
 export function snapPointToMatrix(_doc: DiagramDocument, point: Point): Point {
@@ -761,7 +786,7 @@ export function anchorPoint(
   }
   if (anchor.kind === 'cell') {
     const cell = doc.cells.find((item) => item.id === anchor.id);
-    if (!cell || (cell.level ?? 2) !== 2) return null;
+    if (!cell) return null;
     return getCellGeometry(doc, cell)?.midpoint ?? null;
   }
   const arrow = doc.arrows.find((item) => item.id === anchor.id);
@@ -892,6 +917,28 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
   };
 }
 
+export function cellLabelPoint(
+  geometry: Pick<
+    NonNullable<ReturnType<typeof getCellGeometry>>,
+    'midpoint'
+  >,
+  position: CellLabelPosition,
+  distance = 22,
+): Point {
+  const offset =
+    position === 'top'
+      ? { x: 0, y: -distance }
+      : position === 'bottom'
+        ? { x: 0, y: distance }
+        : position === 'left'
+          ? { x: -distance, y: 0 }
+          : { x: distance, y: 0 };
+  return {
+    x: geometry.midpoint.x + offset.x,
+    y: geometry.midpoint.y + offset.y,
+  };
+}
+
 export function areParallel(
   first: DiagramArrow,
   second: DiagramArrow,
@@ -907,7 +954,6 @@ export function isNativeParallelCell(
   doc: DiagramDocument,
   cell: DiagramTwoCell,
 ): boolean {
-  if ((cell.level ?? 2) !== 2) return false;
   const source = cellSourceAnchor(cell);
   const target = cellTargetAnchor(cell);
   if (
@@ -936,7 +982,10 @@ export function isNativeParallelCell(
   const sourceArrow = doc.arrows.find((arrow) => arrow.id === source.id);
   const targetArrow = doc.arrows.find((arrow) => arrow.id === target.id);
   return Boolean(
-    sourceArrow && targetArrow && areParallel(sourceArrow, targetArrow),
+    sourceArrow &&
+      targetArrow &&
+      areParallel(sourceArrow, targetArrow) &&
+      resolvedCellShaft(cell) === 'double',
   );
 }
 
@@ -1369,13 +1418,20 @@ export function generateSvg(
         direction === 'none' || stroke === 'none'
           ? ''
           : `<path d="M ${round(wingA.x)} ${round(wingA.y)} L ${round(tip.x)} ${round(tip.y)} L ${round(wingB.x)} ${round(wingB.y)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
-      const labelX = geometry.midpoint.x + geometry.normal.x * 20;
-      const labelY = geometry.midpoint.y + geometry.normal.y * 20;
+      const labelPoint = cellLabelPoint(
+        geometry,
+        resolvedCellLabelPosition(cell),
+      );
       const shaft =
         stroke === 'none'
           ? ''
-          : `${line(-2.8)}${(cell.level ?? 2) === 3 ? line(0) : ''}${line(2.8)}`;
-      return `${shaft}${head}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
+          : resolvedCellShaft(cell) === 'double'
+            ? `${line(-2.8)}${line(2.8)}`
+            : line(0);
+      const label = cell.label
+        ? `<text x="${round(labelPoint.x)}" y="${round(labelPoint.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`
+        : '';
+      return `${shaft}${head}${label}`;
     })
     .join('');
   const nodeMarkup = doc.nodes
@@ -1473,6 +1529,31 @@ function arrowXyCommand(
   return [visible, namedAnchors].filter(Boolean).join(' ');
 }
 
+function cellXyLabel(cell: DiagramTwoCell): string {
+  if (!cell.label) return '';
+  const position = resolvedCellLabelPosition(cell);
+  const offset =
+    position === 'top'
+      ? '<0pt,-1.2em>'
+      : position === 'bottom'
+        ? '<0pt,1.2em>'
+        : position === 'left'
+          ? '<-1.2em,0pt>'
+          : '<1.2em,0pt>';
+  // Put the label on an invisible companion path. The visible shaft remains
+  // continuous, while the absolute offset mirrors the editor's four-way
+  // placement instead of depending on the arrow's direction.
+  return `|(.5)*+${offset}{${safeTex(cell.label)}}`;
+}
+
+function cellXyInlineLabel(cell: DiagramTwoCell): string {
+  if (!cell.label) return '';
+  const position = resolvedCellLabelPosition(cell);
+  const side = position === 'bottom' ? '_' : '^';
+  const t = position === 'left' ? 0.2 : position === 'right' ? 0.8 : 0.5;
+  return `${side}(${t}){${safeTex(cell.label)}}`;
+}
+
 export function generateXyPic(
   doc: DiagramDocument,
   mode: 'typora' | 'snippet' | 'latex' = 'typora',
@@ -1498,9 +1579,8 @@ export function generateXyPic(
   const commands = new Map<NodeId, string[]>();
   const consumedArrows = new Set<ArrowId>();
   let nativeCellCount = 0;
-  const threeCells = doc.cells.filter((cell) => (cell.level ?? 2) === 3);
-  const cellsUsedByThreeCells = new Set(
-    threeCells.flatMap((cell) => {
+  const cellsUsedAsAnchors = new Set(
+    doc.cells.flatMap((cell) => {
       const source = cellSourceAnchor(cell);
       const target = cellTargetAnchor(cell);
       return [source, target].flatMap((anchor) =>
@@ -1508,26 +1588,10 @@ export function generateXyPic(
       );
     }),
   );
-  const nativePairCounts = new Map<string, number>();
-  for (const cell of doc.cells) {
-    if (!isNativeParallelCell(doc, cell)) continue;
-    const source = cellSourceAnchor(cell);
-    const target = cellTargetAnchor(cell);
-    if (source?.kind !== 'arrow' || target?.kind !== 'arrow') continue;
-    const key = [source.id, target.id].sort().join('|');
-    nativePairCounts.set(key, (nativePairCounts.get(key) ?? 0) + 1);
-  }
-  const nativeCellIds = new Set(
-    doc.cells.flatMap((cell) => {
-      if (!isNativeParallelCell(doc, cell) || cellsUsedByThreeCells.has(cell.id))
-        return [];
-      const source = cellSourceAnchor(cell);
-      const target = cellTargetAnchor(cell);
-      if (source?.kind !== 'arrow' || target?.kind !== 'arrow') return [];
-      const key = [source.id, target.id].sort().join('|');
-      return nativePairCounts.get(key) === 1 ? [cell.id] : [];
-    }),
-  );
+  // XyJax renders \ar@{=>} natively, while its \xtwocell bootstrap macro is
+  // not consistently available and can leak red TeX text into exported SVGs.
+  // Use the same explicit double-arrow primitive for every attached arrow.
+  const nativeCellIds = new Set<CellId>();
 
   for (const cell of doc.cells) {
     const sourceAnchor = cellSourceAnchor(cell);
@@ -1603,6 +1667,7 @@ export function generateXyPic(
     ArrowId,
     Map<string, { name: string; t: number }>
   >();
+  const cellAnchorAliases = new Map<CellId, string>();
   let arrowAnchorIndex = 0;
   const resolveAnchorAlias = (anchor: CellAnchor): string | null => {
     if (anchor.kind === 'node') {
@@ -1612,7 +1677,7 @@ export function generateXyPic(
       const column = xs.indexOf(node.x);
       return row >= 0 && column >= 0 ? `${row + 1},${column + 1}` : null;
     }
-    if (anchor.kind === 'cell') return null;
+    if (anchor.kind === 'cell') return cellAnchorAliases.get(anchor.id) ?? null;
     const arrow = doc.arrows.find((item) => item.id === anchor.id);
     if (
       !arrow ||
@@ -1638,10 +1703,28 @@ export function generateXyPic(
   };
 
   const generalCellCommands: string[] = [];
-  const cellAnchorAliases = new Map<CellId, string>();
   let cellAnchorIndex = 0;
-  for (const cell of doc.cells) {
-    if ((cell.level ?? 2) !== 2 || nativeCellIds.has(cell.id)) continue;
+  const pendingCells = doc.cells.filter((cell) => !nativeCellIds.has(cell.id));
+  while (pendingCells.length > 0) {
+    const readyIndex = pendingCells.findIndex((cell) => {
+      const source = cellSourceAnchor(cell);
+      const target = cellTargetAnchor(cell);
+      return Boolean(
+        source &&
+          target &&
+          (source.kind !== 'cell' || cellAnchorAliases.has(source.id)) &&
+          (target.kind !== 'cell' || cellAnchorAliases.has(target.id)),
+      );
+    });
+    if (readyIndex < 0) {
+      for (const cell of pendingCells) {
+        warnings.push(
+          `Higher arrow ${cell.label || cell.id} has a cyclic or missing arrow attachment and was omitted.`,
+        );
+      }
+      break;
+    }
+    const [cell] = pendingCells.splice(readyIndex, 1);
     const sourceAnchor = cellSourceAnchor(cell);
     const targetAnchor = cellTargetAnchor(cell);
     if (!sourceAnchor || !targetAnchor) continue;
@@ -1652,7 +1735,7 @@ export function generateXyPic(
       )
     ) {
       warnings.push(
-        `2-cell ${cell.label || cell.id} has a missing boundary path and was omitted.`,
+        `Higher arrow ${cell.label || cell.id} has a missing boundary path and was omitted.`,
       );
       continue;
     }
@@ -1660,21 +1743,28 @@ export function generateXyPic(
     const targetAlias = resolveAnchorAlias(targetAnchor);
     if (!sourceAlias || !targetAlias) {
       warnings.push(
-        `2-cell ${cell.label || cell.id} could not name one of its Xy-pic path anchors and was omitted.`,
+        `Higher arrow ${cell.label || cell.id} could not name one of its Xy-pic path anchors and was omitted.`,
       );
       continue;
     }
     const stroke = resolvedCellStroke(cell);
     const direction = resolvedCellHead(cell);
+    const shaft = resolvedCellShaft(cell);
     const style =
       stroke === 'none'
         ? '@{}'
         : stroke === 'solid'
-          ? direction === 'reverse'
-            ? '@{<=}'
-            : direction === 'none'
-              ? '@{=}'
-              : '@{=>}'
+          ? shaft === 'double'
+            ? direction === 'reverse'
+              ? '@{<=}'
+              : direction === 'none'
+                ? '@{=}'
+                : '@{=>}'
+            : direction === 'reverse'
+              ? '@{<-}'
+              : direction === 'none'
+                ? '@{-}'
+                : '@{->}'
           : direction === 'reverse'
             ? stroke === 'dashed'
               ? '@{<--}'
@@ -1688,10 +1778,14 @@ export function generateXyPic(
                 : '@{.>}';
     if (stroke === 'dashed' || stroke === 'dotted') {
       warnings.push(
-        `2-cell ${cell.label || cell.id} uses Xy-pic's nearest ${stroke} shaft glyph.`,
+        `Higher arrow ${cell.label || cell.id} uses Xy-pic's nearest ${stroke} shaft glyph.`,
       );
     }
-    const label = cell.label ? `^(.35){${safeTex(cell.label)}}` : '';
+    const usesCellAnchor =
+      sourceAnchor.kind === 'cell' || targetAnchor.kind === 'cell';
+    const label = usesCellAnchor
+      ? cellXyInlineLabel(cell)
+      : cellXyLabel(cell);
     const curve =
       Math.abs(cell.curve ?? 0) < 1
         ? ''
@@ -1699,49 +1793,20 @@ export function generateXyPic(
           ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`
           : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
     generalCellCommands.push(
-      `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${label}`,
+      `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${usesCellAnchor ? label : ''}`,
     );
-    if (cellsUsedByThreeCells.has(cell.id)) {
+    if (label && !usesCellAnchor) {
+      generalCellCommands.push(
+        `\\POS "${sourceAlias}" \\ar${curve}@{} "${targetAlias}"${label}`,
+      );
+    }
+    if (cellsUsedAsAnchors.has(cell.id)) {
       const alias = `xyq-c${++cellAnchorIndex}`;
       cellAnchorAliases.set(cell.id, alias);
       generalCellCommands.push(
         `\\POS "${sourceAlias}" \\ar${curve}@{} "${targetAlias}"|(.5)*{}="${alias}"`,
       );
     }
-  }
-
-  for (const cell of threeCells) {
-    const source = cellSourceAnchor(cell);
-    const target = cellTargetAnchor(cell);
-    const sourceAlias =
-      source?.kind === 'cell' ? cellAnchorAliases.get(source.id) : null;
-    const targetAlias =
-      target?.kind === 'cell' ? cellAnchorAliases.get(target.id) : null;
-    if (!sourceAlias || !targetAlias) {
-      warnings.push(
-        `3-cell ${cell.label || cell.id} could not name one of its 2-cell boundaries and was omitted.`,
-      );
-      continue;
-    }
-    const curve =
-      Math.abs(cell.curve ?? 0) < 1
-        ? ''
-        : (cell.curve ?? 0) > 0
-          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`
-          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
-    const direction = resolvedCellHead(cell);
-    const style =
-      resolvedCellStroke(cell) === 'none'
-        ? '@{}'
-        : direction === 'reverse'
-          ? '@{<==}'
-          : direction === 'none'
-            ? '@{===}'
-            : '@{==>}';
-    const label = cell.label ? `^(.35){${safeTex(cell.label)}}` : '';
-    generalCellCommands.push(
-      `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${label}`,
-    );
   }
 
   for (const arrow of doc.arrows) {
@@ -1853,7 +1918,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
   showcase: {
     format: 'xyquiver',
     version: 2,
-    title: 'Pasting of 2-cells',
+    title: 'Pasting of attached arrows',
     grid: {
       columns: [...DEFAULT_MATRIX_GRID.columns],
       rows: [...DEFAULT_MATRIX_GRID.rows],
@@ -1900,7 +1965,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
   twocell: {
     format: 'xyquiver',
     version: 2,
-    title: 'Native 2-cell',
+    title: 'Parallel double arrow',
     grid: { columns: [200, 400, 600, 800], rows: [160, 320, 480] },
     nodes: [
       node('n-a', '\\mathcal{C}', 200, 320),
@@ -1954,7 +2019,6 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     cells: [
       {
         id: 'c-rho-upper',
-        level: 2,
         sourceArrow: 'a-rho1',
         targetArrow: 'a-rho1p',
         label: '',
@@ -1963,7 +2027,6 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
       },
       {
         id: 'c-rho-lower',
-        level: 2,
         sourceArrow: 'a-rho1',
         targetArrow: 'a-rho1p',
         label: '',
@@ -1972,7 +2035,6 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
       },
       {
         id: 'c-rho-three',
-        level: 3,
         sourceAnchor: { kind: 'cell', id: 'c-rho-upper' },
         targetAnchor: { kind: 'cell', id: 'c-rho-lower' },
         sourcePath: [],
@@ -2252,6 +2314,12 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       typeof item.label !== 'string' ||
       typeof item.color !== 'string' ||
       (item.level !== undefined && item.level !== 2 && item.level !== 3) ||
+      (item.labelPosition !== undefined &&
+        !['top', 'bottom', 'left', 'right'].includes(
+          item.labelPosition as string,
+        )) ||
+      (item.shaft !== undefined &&
+        !['single', 'double'].includes(item.shaft as string)) ||
       (item.sourceArrow !== undefined &&
         typeof item.sourceArrow !== 'string') ||
       (item.targetArrow !== undefined &&
@@ -2319,7 +2387,6 @@ export function validateDocument(value: unknown): DiagramDocument | null {
           : []);
     cells.push({
       id: item.id,
-      level: (item.level as 2 | 3 | undefined) ?? 2,
       ...(sourceArrow ? { sourceArrow } : {}),
       ...(targetArrow ? { targetArrow } : {}),
       sourceAnchor,
@@ -2327,6 +2394,9 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       sourcePath,
       targetPath,
       label: item.label,
+      labelPosition:
+        (item.labelPosition as CellLabelPosition | undefined) ?? 'top',
+      shaft: (item.shaft as CellShaft | undefined) ?? 'double',
       color: item.color,
       ...(item.curve === undefined ? {} : { curve: item.curve as number }),
       head: (item.head as CellHead | undefined) ?? 'arrow',
@@ -2368,6 +2438,7 @@ export function validateDocument(value: unknown): DiagramDocument | null {
   const nodeIds = new Set(nodes.map((node) => node.id));
   const arrowById = new Map(arrows.map((arrow) => [arrow.id, arrow]));
   const cellById = new Map(cells.map((cell) => [cell.id, cell]));
+  const cellIndexById = new Map(cells.map((cell, index) => [cell.id, index]));
   if (
     arrows.some(
       (arrow) =>
@@ -2422,7 +2493,7 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       : anchor.kind === 'node'
         ? info.vertices.includes(anchor.id)
         : false;
-  for (const cell of cells) {
+  for (const [cellIndex, cell] of cells.entries()) {
     const sourceAnchor = cellSourceAnchor(cell);
     const targetAnchor = cellTargetAnchor(cell);
     if (
@@ -2433,16 +2504,11 @@ export function validateDocument(value: unknown): DiagramDocument | null {
     ) {
       return null;
     }
-    const level = cell.level ?? 2;
     if (
-      (level === 2 &&
-        (sourceAnchor.kind === 'cell' || targetAnchor.kind === 'cell')) ||
-      (level === 3 &&
-        (sourceAnchor.kind !== 'cell' ||
-          targetAnchor.kind !== 'cell' ||
-          sourceAnchor.id === targetAnchor.id ||
-          (cellById.get(sourceAnchor.id)?.level ?? 2) !== 2 ||
-          (cellById.get(targetAnchor.id)?.level ?? 2) !== 2))
+      (sourceAnchor.kind === 'cell' &&
+        (cellIndexById.get(sourceAnchor.id) ?? cellIndex) >= cellIndex) ||
+      (targetAnchor.kind === 'cell' &&
+        (cellIndexById.get(targetAnchor.id) ?? cellIndex) >= cellIndex)
     ) {
       return null;
     }

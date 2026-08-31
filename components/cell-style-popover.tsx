@@ -14,6 +14,7 @@ import {
 import { Slider } from '@/components/ui/slider';
 import {
   resolvedCellHead,
+  resolvedCellShaft,
   resolvedCellStroke,
   snapCurveLevel,
   type CellHead,
@@ -26,12 +27,12 @@ import { cn } from '@/lib/utils';
 function CellStylePreview({
   stroke,
   head,
-  level = 2,
+  shaft = 'double',
   className,
 }: {
   stroke: CellStroke;
   head: Exclude<CellHead, 'equality'>;
-  level?: 2 | 3;
+  shaft?: 'single' | 'double';
   className?: string;
 }) {
   const dash =
@@ -60,7 +61,7 @@ function CellStylePreview({
         </text>
       ) : (
         <>
-          {(level === 3 ? [10, 16, 22] : [13, 19]).map((y) => (
+          {(shaft === 'double' ? [13, 19] : [16]).map((y) => (
             <path
               key={y}
               d={`M ${lineStart} ${y} L ${lineEnd} ${y}`}
@@ -102,14 +103,14 @@ function CellStyleChoice({
   selected,
   stroke,
   head,
-  level = 2,
+  shaft = 'double',
   onSelect,
 }: {
   label: string;
   selected: boolean;
   stroke: CellStroke;
   head: Exclude<CellHead, 'equality'>;
-  level?: 2 | 3;
+  shaft?: 'single' | 'double';
   onSelect: () => void;
 }) {
   return (
@@ -125,7 +126,7 @@ function CellStyleChoice({
       <CellStylePreview
         stroke={stroke}
         head={head}
-        level={level}
+        shaft={shaft}
         className="h-6 w-full"
       />
       <span className="text-[10px] font-medium leading-none">{label}</span>
@@ -149,9 +150,9 @@ export function CellStylePopover({
   sideOffset?: number;
 }) {
   const language = useUiLanguage();
-  const level = cell.level ?? 2;
   const stroke = resolvedCellStroke(cell);
   const head = resolvedCellHead(cell);
+  const shaft = resolvedCellShaft(cell);
   const curve = cell.curve ?? 0;
   const setStroke = (next: CellStroke) =>
     onPatch({
@@ -173,10 +174,10 @@ export function CellStylePopover({
             size={compact ? 'sm' : 'default'}
             aria-label={ui(
               language,
-              `打开${level}-胞腔样式菜单`,
-              `Open ${level}-cell style menu`,
+              '打开附着箭头样式菜单',
+              'Open attached-arrow style menu',
             )}
-            title={ui(language, `${level}-胞腔样式`, `${level}-cell style`)}
+            title={ui(language, '附着箭头样式', 'Attached-arrow style')}
             className={cn(
               compact
                 ? 'h-8 min-w-28 flex-1 justify-between gap-1.5 rounded-lg bg-background px-2 shadow-none'
@@ -190,7 +191,7 @@ export function CellStylePopover({
             <CellStylePreview
               stroke={stroke}
               head={head}
-              level={level}
+              shaft={shaft}
               className="h-6 min-w-20 flex-1"
             />
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -201,11 +202,16 @@ export function CellStylePopover({
               <CellStylePreview
                 stroke={stroke}
                 head={head}
-                level={level}
+                shaft={shaft}
                 className="h-7 w-full max-w-40"
               />
               <span className="block truncate text-[10px] text-muted-foreground">
-                {ui(language, `层级 ${level}`, `Level ${level}`)} ·{' '}
+                {ui(
+                  language,
+                  shaft === 'double' ? '双线附着箭头' : '单线附着箭头',
+                  shaft === 'double' ? 'Double attached arrow' : 'Single attached arrow',
+                )}{' '}
+                ·{' '}
                 {ui(
                   language,
                   stroke === 'solid'
@@ -242,20 +248,44 @@ export function CellStylePopover({
         <PopoverHeader>
           <div className="flex items-center gap-2">
             <PopoverTitle>
-              {ui(language, `${level}-胞腔样式`, `${level}-cell style`)}
+              {ui(language, '附着箭头样式', 'Attached-arrow style')}
             </PopoverTitle>
             <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-indigo-700">
-              {ui(language, `层级 ${level}`, `Level ${level}`)}
+              {ui(language, '双线', 'Double line')}
             </span>
           </div>
           <PopoverDescription>
             {ui(
               language,
               '改变图形样式时，高阶边界数据保持不变。',
-              `A ${level}-cell keeps its higher boundary data while its glyph changes.`,
+              'Changing the glyph keeps both attachment endpoints unchanged.',
             )}
           </PopoverDescription>
         </PopoverHeader>
+
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {ui(language, '线身数量', 'Shaft count')}
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            <CellStyleChoice
+              label={ui(language, '单线', 'Single')}
+              selected={shaft === 'single'}
+              stroke={stroke === 'none' ? 'solid' : stroke}
+              head={head}
+              shaft="single"
+              onSelect={() => onPatch({ shaft: 'single' })}
+            />
+            <CellStyleChoice
+              label={ui(language, '双线', 'Double')}
+              selected={shaft === 'double'}
+              stroke={stroke === 'none' ? 'solid' : stroke}
+              head={head}
+              shaft="double"
+              onSelect={() => onPatch({ shaft: 'double' })}
+            />
+          </div>
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
@@ -285,8 +315,8 @@ export function CellStylePopover({
             step={1}
             aria-label={ui(
               language,
-              `${level}-胞腔弯曲度`,
-              `${level}-cell curvature`,
+              '附着箭头弯曲度',
+              'Attached-arrow curvature',
             )}
             onValueChange={(value) =>
               onPatch({
@@ -309,8 +339,8 @@ export function CellStylePopover({
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             {ui(
               language,
-              level === 3 ? '三线线身' : '双线线身',
-              level === 3 ? 'Triple-line body' : 'Double-line body',
+              '双线线身',
+              'Double-line body',
             )}
           </p>
           <div className="grid grid-cols-4 gap-1.5">
@@ -329,7 +359,7 @@ export function CellStylePopover({
                 selected={stroke === value}
                 stroke={value}
                 head={head}
-                level={level}
+                shaft={shaft}
                 onSelect={() => setStroke(value)}
               />
             ))}
@@ -346,7 +376,7 @@ export function CellStylePopover({
               selected={head === 'arrow' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="arrow"
-              level={level}
+              shaft={shaft}
               onSelect={() => setHead('arrow')}
             />
             <CellStyleChoice
@@ -354,7 +384,7 @@ export function CellStylePopover({
               selected={head === 'reverse' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="reverse"
-              level={level}
+              shaft={shaft}
               onSelect={() => setHead('reverse')}
             />
             <CellStyleChoice
@@ -362,7 +392,7 @@ export function CellStylePopover({
               selected={head === 'none' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="none"
-              level={level}
+              shaft={shaft}
               onSelect={() => setHead('none')}
             />
           </div>

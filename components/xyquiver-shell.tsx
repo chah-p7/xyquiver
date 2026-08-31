@@ -10,6 +10,10 @@ import {
 } from 'react';
 import {
   ArrowLeftRight,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   ChevronDown,
   CirclePlus,
   Copy,
@@ -83,6 +87,7 @@ import {
   inferCellBoundaryPaths,
   isNativeParallelCell,
   matrixAxes,
+  resolvedCellLabelPosition,
   resolveConnectionLevel,
   selectionKey,
   snapCurveLevel,
@@ -90,6 +95,7 @@ import {
   validateDocument,
   type ArrowId,
   type CellAnchor,
+  type CellLabelPosition,
   type DiagramArrow,
   type DiagramDocument,
   type DiagramNode,
@@ -119,8 +125,8 @@ const tools: Array<{
 
 const examples = [
   { id: 'quasicategory', label: 'Quasi-category composition 2-simplex' },
-  { id: 'showcase', label: 'Pasting of 2-cells' },
-  { id: 'twocell', label: 'Native 2-cell' },
+  { id: 'showcase', label: 'Pasting of attached arrows' },
+  { id: 'twocell', label: 'Parallel double arrow' },
   { id: 'parallel', label: 'Parallel deformation arrows' },
   { id: 'homotopy', label: 'Homotopy stabilization' },
   { id: 'snake', label: 'Snake lemma' },
@@ -200,7 +206,7 @@ function anchorName(doc: DiagramDocument, anchor: CellAnchor | null) {
     );
   }
   return displayTex(
-    doc.cells.find((item) => item.id === anchor.id)?.label ?? '2-cell',
+    doc.cells.find((item) => item.id === anchor.id)?.label ?? 'attached arrow',
   );
 }
 
@@ -246,8 +252,8 @@ function Inspector({
           <p className="mt-1.5 text-xs leading-relaxed">
             {ui(
               language,
-              '选择对象、箭头或二胞腔，即可编辑 LaTeX 和几何属性。',
-              'Select an object, arrow, or 2-cell to edit its LaTeX and geometry.',
+              '选择对象、顶点箭头或附着箭头，即可编辑 LaTeX 和几何属性。',
+              'Select an object, vertex arrow, or attached arrow to edit its LaTeX and geometry.',
             )}
           </p>
           <p className="mt-4 font-mono text-[10px] tracking-wide">
@@ -269,16 +275,12 @@ function Inspector({
             {node
               ? ui(language, '对象', 'Object')
               : arrow
-                ? ui(language, '一胞腔', '1-cell')
-                : ui(
-                    language,
-                    `${cell?.level ?? 2}-胞腔`,
-                    `${cell?.level ?? 2}-cell`,
-                  )}
+                ? ui(language, '顶点箭头', 'Vertex arrow')
+                : ui(language, '附着箭头', 'Attached arrow')}
           </p>
         </div>
         <Badge variant="outline" className="font-mono">
-          {node ? '0' : arrow ? '1' : (cell?.level ?? 2)}-cell
+          {node ? ui(language, '顶点', 'vertex') : arrow ? 'V→V' : '↠'}
         </Badge>
       </div>
 
@@ -465,30 +467,53 @@ function Inspector({
           </div>
           <div className="space-y-2">
             <Label>
-              {ui(
-                language,
-                `${cell.level ?? 2}-胞腔箭头样式`,
-                `${cell.level ?? 2}-cell arrow style`,
-              )}
+              {ui(language, '附着箭头样式', 'Attached-arrow style')}
             </Label>
             <CellStylePopover
               cell={cell}
               onPatch={(patch) => onPatchCell(cell.id, patch)}
             />
           </div>
+          <div className="space-y-2">
+            <Label>{ui(language, '标签位置', 'Label position')}</Label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(
+                [
+                  ['top', ArrowUp, ui(language, '上', 'Top')],
+                  ['bottom', ArrowDown, ui(language, '下', 'Bottom')],
+                  ['left', ArrowLeft, ui(language, '左', 'Left')],
+                  ['right', ArrowRight, ui(language, '右', 'Right')],
+                ] as const
+              ).map(([position, Icon, label]) => (
+                <Button
+                  key={position}
+                  size="sm"
+                  variant={
+                    resolvedCellLabelPosition(cell) === position
+                      ? 'secondary'
+                      : 'outline'
+                  }
+                  aria-label={label}
+                  title={label}
+                  onClick={() =>
+                    onPatchCell(cell.id, {
+                      labelPosition: position as CellLabelPosition,
+                    })
+                  }
+                >
+                  <Icon className="size-3.5" />
+                </Button>
+              ))}
+            </div>
+          </div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-950">
-            {(cell.level ?? 2) === 3 ? (
+            {isNativeParallelCell(doc, cell) ? (
               <>
                 {ui(
                   language,
-                  '以两个二胞腔为边界；Xy-pic 源码使用三重箭身表示',
-                  'Bounded by two 2-cells; Xy-pic source uses a triple shaft',
+                  '箭头到箭头，默认导出为 Xy-pic 双线箭头',
+                  'Arrow-to-arrow, exported as an Xy-pic double arrow by default',
                 )}
-              </>
-            ) : isNativeParallelCell(doc, cell) ? (
-              <>
-                {ui(language, '原生平行映射', 'Native parallel mapping')}：{' '}
-                <code className="font-mono">\\xtwocell</code>
               </>
             ) : cellBoundaryPaths(cell).source.length === 2 ||
               cellBoundaryPaths(cell).target.length === 2 ? (
@@ -503,8 +528,8 @@ function Inspector({
               <>
                 {ui(
                   language,
-                  '附着锚点之间的一般原生二胞腔',
-                  'General native 2-cell between attached anchors',
+                  '附着锚点之间的双线箭头',
+                  'Double-line arrow between attached anchors',
                 )}
               </>
             )}
@@ -1046,13 +1071,7 @@ export function XyQuiverShell() {
       if (nextTool) {
         cancelCanvasGesture();
         setTool(nextTool);
-        setConnectionMode(
-          nextTool === 'arrow'
-            ? 'arrow'
-            : nextTool === 'cell'
-              ? 'cell'
-              : 'auto',
-        );
+        setConnectionMode('auto');
         setPendingNode(null);
         setPendingArrow(null);
       }
@@ -1104,8 +1123,8 @@ export function XyQuiverShell() {
         setStatus(
           ui(
             language,
-            '请先同时反转或重定向两条边界箭头，再修改这个二胞腔。',
-            'Reverse or retarget both boundary arrows before changing this 2-cell.',
+            '请先同时反转或重定向两条边界箭头，再修改这条附着箭头。',
+            'Reverse or retarget both boundary arrows before changing this attached arrow.',
           ),
         );
         return;
@@ -1141,10 +1160,10 @@ export function XyQuiverShell() {
     [commit],
   );
 
-  const changeSelectionLevel = useCallback(
+  const _legacyChangeSelectionLevel = useCallback(
     (
       item: Extract<Selection, { kind: 'arrow' | 'cell' }>,
-      level: Exclude<ConnectionMode, 'auto'>,
+      level: 'arrow' | 'cell' | 'three',
       label: string,
     ) => {
       if (
@@ -1504,7 +1523,6 @@ export function XyQuiverShell() {
           const cellSource = cellSourceAnchor(cell);
           const cellTarget = cellTargetAnchor(cell);
           return (
-            (cell.level ?? 2) === 2 &&
             cellSource?.kind === 'arrow' &&
             cellTarget?.kind === 'arrow' &&
             cellSource.id === source.id &&
@@ -1528,7 +1546,6 @@ export function XyQuiverShell() {
             ...cells,
             {
               id: nextId,
-              level: 2,
               sourceArrow: source.id,
               targetArrow: target.id,
               sourceAnchor: { kind: 'arrow', id: source.id, t: 0.5 },
@@ -1537,6 +1554,7 @@ export function XyQuiverShell() {
               targetPath: [target.id],
               label,
               color: '#273244',
+              shaft: 'double',
               head: 'arrow',
               stroke: 'solid',
               curve:
@@ -1644,19 +1662,7 @@ export function XyQuiverShell() {
       );
       if (connectionError) {
         setStatus(
-          connectionError.startsWith('A 1-cell')
-            ? ui(
-                language,
-                '一胞腔的端点必须是对象；若要附着到箭头，请选择二胞腔。',
-                connectionError,
-              )
-            : connectionError.startsWith('A 3-cell')
-              ? ui(
-                  language,
-                  '三胞腔必须连接两个不同的二胞腔。',
-                  connectionError,
-                )
-              : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
+          ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
         );
         return;
       }
@@ -1666,9 +1672,7 @@ export function XyQuiverShell() {
           ? doc.nodes.some((node) => node.id === anchor.id)
           : anchor.kind === 'arrow'
             ? doc.arrows.some((arrow) => arrow.id === anchor.id)
-            : doc.cells.some(
-                (cell) => cell.id === anchor.id && (cell.level ?? 2) === 2,
-              ));
+            : doc.cells.some((cell) => cell.id === anchor.id));
       if (!anchorExists(source) || !anchorExists(target)) {
         setStatus(
           ui(
@@ -1680,65 +1684,13 @@ export function XyQuiverShell() {
         return;
       }
       const mode = resolveConnectionLevel(requested, source.kind, target.kind);
-      if (mode === 'three') {
-        if (source.kind !== 'cell' || target.kind !== 'cell') return;
-        const nextId = makeId('cell');
-        const label = greekLabels[doc.cells.length % greekLabels.length];
-        commit((current) => {
-          const sourceCell = current.cells.find(
-            (cell) => cell.id === source.id && (cell.level ?? 2) === 2,
-          );
-          const targetCell = current.cells.find(
-            (cell) => cell.id === target.id && (cell.level ?? 2) === 2,
-          );
-          if (!sourceCell || !targetCell) return current;
-          const sameCurve =
-            Math.abs((sourceCell.curve ?? 0) - (targetCell.curve ?? 0)) < 1;
-          const cells = current.cells.map((cell) =>
-            sameCurve && cell.id === sourceCell.id
-              ? { ...cell, curve: -45 }
-              : sameCurve && cell.id === targetCell.id
-                ? { ...cell, curve: 45 }
-                : cell,
-          );
-          return {
-            ...current,
-            cells: [
-              ...cells,
-              {
-                id: nextId,
-                level: 3,
-                sourceAnchor: { kind: 'cell', id: sourceCell.id },
-                targetAnchor: { kind: 'cell', id: targetCell.id },
-                sourcePath: [],
-                targetPath: [],
-                label,
-                color: '#273244',
-                head: 'arrow',
-                stroke: 'solid',
-              },
-            ],
-          };
-        });
-        const nextSelection: Selection = { kind: 'cell', id: nextId };
-        setSelections([nextSelection]);
-        setEditing(nextSelection);
-        setStatus(
-          ui(
-            language,
-            `已创建三胞腔 ${displayTex(label)}。`,
-            `Created 3-cell ${displayTex(label)}.`,
-          ),
-        );
-        return;
-      }
       const newNodes: DiagramNode[] = [];
       const resolveNode = (
         anchor: CanvasAnchor,
         index: number,
       ): NodeId | null => {
         if (anchor.kind === 'node') return anchor.id;
-        if (anchor.kind === 'arrow') return null;
+        if (anchor.kind === 'arrow' || anchor.kind === 'cell') return null;
         const occupied = doc.nodes.find(
           (node) => node.x === anchor.point.x && node.y === anchor.point.y,
         );
@@ -1762,8 +1714,8 @@ export function XyQuiverShell() {
           setStatus(
             ui(
               language,
-              '请为一胞腔选择两个不同的对象锚点。',
-              'Choose two different object anchors for a 1-cell.',
+            '请为普通箭头选择两个不同的顶点锚点。',
+            'Choose two different vertex anchors for an ordinary arrow.',
             ),
           );
           return;
@@ -1807,13 +1759,13 @@ export function XyQuiverShell() {
           newNodes.length > 0
             ? ui(
                 language,
-                `已创建 ${newNodes.length} 个对象和一胞腔 ${label}。`,
-                `Created ${newNodes.length} ${newNodes.length === 1 ? 'object' : 'objects'} and 1-cell ${label}.`,
+                `已创建 ${newNodes.length} 个对象和普通箭头 ${label}。`,
+                `Created ${newNodes.length} ${newNodes.length === 1 ? 'object' : 'objects'} and ordinary arrow ${label}.`,
               )
             : ui(
                 language,
-                `已创建一胞腔 ${label}。`,
-                `Created 1-cell ${label}.`,
+                `已创建普通箭头 ${label}。`,
+                `Created ordinary arrow ${label}.`,
               ),
         );
         return;
@@ -1843,8 +1795,8 @@ export function XyQuiverShell() {
         setStatus(
           ui(
             language,
-            '请为二胞腔选择两个不同的锚点。',
-            'Choose two different anchors for a 2-cell.',
+            '请为附着箭头选择两个不同的锚点。',
+            'Choose two different anchors for an attached arrow.',
           ),
         );
         return;
@@ -1920,7 +1872,6 @@ export function XyQuiverShell() {
             right.kind !== 'arrow' ||
             Math.abs((left.t ?? 0.5) - (right.t ?? 0.5)) < 1e-6);
         const siblings = current.cells.filter((cell) => {
-          if ((cell.level ?? 2) !== 2) return false;
           const existingSource = cellSourceAnchor(cell);
           const existingTarget = cellTargetAnchor(cell);
           return Boolean(
@@ -1953,7 +1904,6 @@ export function XyQuiverShell() {
             ...cells,
             {
               id: nextId,
-              level: 2,
               sourceArrow: nativeParallel ? sourceArrow!.id : undefined,
               targetArrow: nativeParallel ? targetArrow!.id : undefined,
               sourceAnchor,
@@ -1962,6 +1912,7 @@ export function XyQuiverShell() {
               targetPath: paths.target,
               label,
               color: '#273244',
+              shaft: 'double',
               head: 'arrow' as const,
               stroke: 'solid' as const,
               curve,
@@ -1976,19 +1927,19 @@ export function XyQuiverShell() {
         nativeParallel
           ? ui(
               language,
-              `已创建原生平行二胞腔 ${displayTex(label)}。`,
-              `Created native parallel 2-cell ${displayTex(label)}.`,
+              `已创建原生平行附着箭头 ${displayTex(label)}。`,
+              `Created native parallel attached arrow ${displayTex(label)}.`,
             )
           : sourceAnchor.kind === 'node' && targetAnchor.kind === 'arrow'
             ? ui(
                 language,
-                `已创建从顶点到对边的附着二胞腔 ${displayTex(label)}。`,
-                `Created attached 2-cell ${displayTex(label)} from the vertex to the opposite edge.`,
+                `已创建从顶点到对边的附着箭头 ${displayTex(label)}。`,
+                `Created attached arrow ${displayTex(label)} from the vertex to the opposite edge.`,
               )
             : ui(
                 language,
-                `已创建一般附着二胞腔 ${displayTex(label)}。`,
-                `Created general attached 2-cell ${displayTex(label)}.`,
+                `已创建一般附着箭头 ${displayTex(label)}。`,
+                `Created general attached arrow ${displayTex(label)}.`,
               ),
       );
     },
@@ -2020,9 +1971,7 @@ export function XyQuiverShell() {
   const switchTool = (next: EditorTool) => {
     cancelCanvasGesture();
     setTool(next);
-    if (next === 'select') setConnectionMode('auto');
-    if (next === 'arrow') setConnectionMode('arrow');
-    if (next === 'cell') setConnectionMode('cell');
+    setConnectionMode('auto');
     setPendingNode(null);
     setPendingArrow(null);
     setStatus(
@@ -2032,23 +1981,11 @@ export function XyQuiverShell() {
             '点击画布创建对象。',
             'Click the canvas to create an object.',
           )
-        : next === 'arrow'
-          ? ui(
-              language,
-              '强制层级 1：在对象或网格锚点之间拖动。',
-              'Level 1 override: drag between object or grid anchors.',
-            )
-          : next === 'cell'
-            ? ui(
-                language,
-                '强制层级 2：在对象或箭头锚点之间拖动。',
-                'Level 2 override: drag between object or arrow anchors.',
-              )
-            : ui(
-                language,
-                '拖动时自动判断层级；双击空白处创建对象。',
-                'Drag to draw with automatic level; double-click empty space for an object.',
-              ),
+        : ui(
+            language,
+            '直接拖动连接：顶点之间为普通箭头，附着到箭头时自动使用双线。',
+            'Drag to connect: vertex-to-vertex is ordinary; arrow attachments are double-line.',
+          ),
     );
   };
 
@@ -2199,23 +2136,11 @@ export function XyQuiverShell() {
             <span className="font-semibold text-foreground">
               {tool === 'object'
                 ? ui(language, '放置对象', 'Place object')
-                : connectionMode === 'arrow'
-                  ? ui(
-                      language,
-                      '拖动绘制 · 强制层级 1',
-                      'Drag to draw · level 1 override',
-                    )
-                  : connectionMode === 'cell'
-                    ? ui(
-                        language,
-                        '拖动绘制 · 强制层级 2',
-                        'Drag to draw · level 2 override',
-                      )
-                    : ui(
-                        language,
-                        '拖动绘制 · 自动层级',
-                        'Drag to draw · level auto',
-                      )}
+                : ui(
+                    language,
+                    '拖动连接 · 端点自动决定箭头形态',
+                    'Drag to connect · endpoints choose the arrow form',
+                  )}
             </span>
             <span className="text-border">/</span>
             <span>
@@ -2223,12 +2148,8 @@ export function XyQuiverShell() {
               {ui(language, '矩阵', 'matrix')} · {doc.nodes.length}{' '}
               {ui(language, '个对象', 'objects')} · {doc.arrows.length}{' '}
               {ui(language, '条箭头', 'arrows')} ·{' '}
-              {
-                doc.cells.filter((cell) => (cell.level ?? 2) === 2).length
-              }{' '}
-              {ui(language, '个二胞腔', '2-cells')} ·{' '}
-              {doc.cells.filter((cell) => cell.level === 3).length}{' '}
-              {ui(language, '个三胞腔', '3-cells')}
+              {doc.cells.length}{' '}
+              {ui(language, '条附着箭头', 'attached arrows')}
             </span>
           </div>
 
@@ -2260,7 +2181,6 @@ export function XyQuiverShell() {
             onPatchNode={patchNode}
             onPatchArrow={patchArrow}
             onPatchCell={patchCell}
-            onChangeSelectionLevel={changeSelectionLevel}
             onBeginLabelEdit={(item) => {
               setSelections([item]);
               setEditing(item);
@@ -2333,11 +2253,7 @@ export function XyQuiverShell() {
             <Grid3X3 />
           </Button>
           <div className="mt-auto rounded-md border bg-muted/60 px-1.5 py-1 font-mono text-[9px] text-muted-foreground">
-            {connectionMode === 'arrow'
-              ? 'L1'
-              : connectionMode === 'cell'
-                ? 'L2'
-                : tools.find((item) => item.id === tool)?.key}
+            {tools.find((item) => item.id === tool)?.key}
           </div>
         </nav>
       </div>

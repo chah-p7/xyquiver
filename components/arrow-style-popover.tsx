@@ -218,17 +218,17 @@ export function ArrowStylePopover({
         <PopoverHeader>
           <div className="flex items-center gap-2">
             <PopoverTitle>
-              {ui(language, '一胞腔样式', '1-cell style')}
+              {ui(language, '顶点箭头样式', 'Vertex-arrow style')}
             </PopoverTitle>
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-600">
-              {ui(language, '层级 1', 'Level 1')}
+              {ui(language, '顶点 → 顶点', 'Vertex → vertex')}
             </span>
           </div>
           <PopoverDescription>
             {ui(
               language,
-              '改变线型不会把这个态射转换成二胞腔。',
-              'Body styling does not change this morphism into a 2-cell.',
+              '线身、箭头与尾部样式只改变字形，不改变两个顶点端点。',
+              'Body, head, and tail options change only the glyph, not its two vertex endpoints.',
             )}
           </PopoverDescription>
         </PopoverHeader>

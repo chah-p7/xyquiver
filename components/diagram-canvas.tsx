@@ -16,6 +16,7 @@ import {
   areParallel,
   arrowGridAnchors,
   arrowPointAt,
+  cellLabelPoint,
   canPlaceNodes,
   constrainArrowCurve,
   displayTex,
@@ -26,6 +27,8 @@ import {
   normalizeMathTex,
   quadraticPoint,
   resolvedCellHead,
+  resolvedCellLabelPosition,
+  resolvedCellShaft,
   resolvedCellStroke,
   resolveConnectionLevel,
   SCENE_HEIGHT,
@@ -48,7 +51,7 @@ import {
 import { ui, useUiLanguage } from '@/lib/i18n';
 
 export type EditorTool = 'select' | 'object' | 'arrow' | 'cell';
-export type ConnectionMode = 'auto' | 'arrow' | 'cell' | 'three';
+export type ConnectionMode = 'auto' | 'arrow' | 'cell';
 
 export type CanvasAnchor =
   | { kind: 'point'; point: Point }
@@ -81,11 +84,6 @@ interface DiagramCanvasProps {
   onPatchNode: (id: NodeId, patch: Partial<DiagramNode>) => void;
   onPatchArrow: (id: ArrowId, patch: Partial<DiagramArrow>) => void;
   onPatchCell: (id: string, patch: Partial<DiagramTwoCell>) => void;
-  onChangeSelectionLevel: (
-    selection: Extract<Selection, { kind: 'arrow' | 'cell' }>,
-    level: Exclude<ConnectionMode, 'auto'>,
-    label: string,
-  ) => void;
   onBeginLabelEdit: (selection: Selection) => void;
   onCommitLabel: (selection: Selection, label: string) => void;
   onCancelLabelEdit: () => void;
@@ -325,10 +323,10 @@ function labelAnchor(doc: DiagramDocument, selection: Selection) {
   const geometry = cell ? getCellGeometry(doc, cell) : null;
   return cell && geometry
     ? {
-        point: {
-          x: geometry.midpoint.x + geometry.normal.x * 20,
-          y: geometry.midpoint.y + geometry.normal.y * 20,
-        },
+        point: cellLabelPoint(
+          geometry,
+          resolvedCellLabelPosition(cell),
+        ),
         label: cell.label,
       }
     : null;
@@ -506,7 +504,7 @@ function anchorFromPoint(
   if (excludeCell !== undefined) {
     let nearest: { id: string; point: Point; distance: number } | null = null;
     for (const cell of doc.cells) {
-      if (cell.id === excludeCell || (cell.level ?? 2) !== 2) continue;
+      if (cell.id === excludeCell) continue;
       const geometry = getCellGeometry(doc, cell);
       if (!geometry) continue;
       const candidateDistance = distance(point, geometry.midpoint);
@@ -558,27 +556,7 @@ export function connectionValidationError(
     return 'Drag to a different anchor to create a connection.';
   }
   const mode = resolveConnectionLevel(requested, source.kind, target.kind);
-  if (
-    mode === 'arrow' &&
-    (source.kind === 'arrow' ||
-      target.kind === 'arrow' ||
-      source.kind === 'cell' ||
-      target.kind === 'cell')
-  ) {
-    return 'A 1-cell needs object endpoints; choose 2-cell for an arrow attachment.';
-  }
-  if (
-    mode === 'cell' &&
-    (source.kind === 'cell' || target.kind === 'cell')
-  ) {
-    return 'A 2-cell cannot use a 2-cell as an endpoint; choose 3-cell.';
-  }
-  if (
-    mode === 'three' &&
-    (source.kind !== 'cell' || target.kind !== 'cell')
-  ) {
-    return 'A 3-cell needs two 2-cell endpoints.';
-  }
+  void mode;
   return null;
 }
 
@@ -586,12 +564,12 @@ function CellGlyph({
   geometry,
   head,
   stroke,
-  level = 2,
+  shaft,
 }: {
   geometry: NonNullable<ReturnType<typeof getCellGeometry>>;
   head: 'arrow' | 'reverse' | 'none';
   stroke: 'solid' | 'dashed' | 'dotted' | 'none';
-  level?: 2 | 3;
+  shaft: 'single' | 'double';
 }) {
   const color = '#273244';
   const reverse = head === 'reverse';
@@ -654,9 +632,9 @@ function CellGlyph({
   };
   return (
     <>
-      {stroke !== 'none' && line(-2.8)}
-      {stroke !== 'none' && level === 3 && line(0)}
-      {stroke !== 'none' && line(2.8)}
+      {stroke !== 'none' && shaft === 'single' && line(0)}
+      {stroke !== 'none' && shaft === 'double' && line(-2.8)}
+      {stroke !== 'none' && shaft === 'double' && line(2.8)}
       {hasHead && (
         <path
           d={`M ${wingA.x} ${wingA.y} L ${tip.x} ${tip.y} L ${wingB.x} ${wingB.y}`}
@@ -693,7 +671,6 @@ export function DiagramCanvas({
   onPatchNode,
   onPatchArrow,
   onPatchCell,
-  onChangeSelectionLevel,
   onBeginLabelEdit,
   onCommitLabel,
   onCancelLabelEdit,
@@ -992,19 +969,7 @@ export function DiagramCanvas({
       );
       if (connectionError) {
         onStatus(
-          connectionError.startsWith('A 1-cell')
-            ? ui(
-                language,
-                '一胞腔的端点必须是对象；若要附着到箭头，请选择二胞腔。',
-                connectionError,
-              )
-            : connectionError.startsWith('A 3-cell')
-              ? ui(
-                  language,
-                  '三胞腔必须连接两个不同的二胞腔。',
-                  connectionError,
-                )
-              : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
+          ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
         );
         return;
       }
@@ -1034,8 +999,8 @@ export function DiagramCanvas({
         onStatus(
           ui(
             language,
-            `已将二胞腔弯曲度设为 ${completed.curve}。`,
-            `Set 2-cell curvature to ${completed.curve}.`,
+            `已将附着箭头弯曲度设为 ${completed.curve}。`,
+            `Set attached-arrow curvature to ${completed.curve}.`,
           ),
         );
       }
@@ -1073,6 +1038,10 @@ export function DiagramCanvas({
           connectTarget.kind,
         )
       : 'arrow';
+  const previewAttachedShaft =
+    gesture?.kind === 'connect' && connectTarget && previewMode === 'cell'
+      ? 'double'
+      : 'single';
   const connectionError =
     gesture?.kind === 'connect' && connectTarget
       ? connectionValidationError(gesture.source, connectTarget, connectionMode)
@@ -1262,7 +1231,7 @@ export function DiagramCanvas({
         </g>
       )}
 
-      <g aria-label="1-cells">
+      <g aria-label="vertex arrows">
         {previewDoc.arrows.map((arrow) => {
           const geometry = getArrowGeometry(previewDoc, arrow);
           if (!geometry) return null;
@@ -1313,7 +1282,7 @@ export function DiagramCanvas({
             <g
               key={arrow.id}
               tabIndex={0}
-              aria-label={`1-cell ${displayTex(arrow.label) || 'unlabelled'}`}
+              aria-label={`vertex arrow ${displayTex(arrow.label) || 'unlabelled'}`}
               className="cursor-crosshair outline-none"
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
@@ -1428,7 +1397,7 @@ export function DiagramCanvas({
         })}
       </g>
 
-      <g aria-label="higher cells">
+      <g aria-label="attached arrows">
         {previewDoc.cells.map((cell) => {
           const geometry = getCellGeometry(previewDoc, cell);
           if (!geometry) return null;
@@ -1439,23 +1408,15 @@ export function DiagramCanvas({
             <g
               key={cell.id}
               tabIndex={0}
-              aria-label={`${cell.level ?? 2}-cell ${displayTex(cell.label)}`}
+              aria-label={`attached arrow ${displayTex(cell.label)}`}
               className="cursor-pointer outline-none"
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
-                if ((cell.level ?? 2) === 2) {
-                  beginConnect(event, {
-                    kind: 'cell',
-                    id: cell.id,
-                    point: geometry.midpoint,
-                  });
-                } else {
-                  event.stopPropagation();
-                  onSelect(
-                    { kind: 'cell', id: cell.id },
-                    additiveModifier(event),
-                  );
-                }
+                beginConnect(event, {
+                  kind: 'cell',
+                  id: cell.id,
+                  point: geometry.midpoint,
+                });
               }}
               onDoubleClick={(event) => {
                 event.preventDefault();
@@ -1491,20 +1452,28 @@ export function DiagramCanvas({
                 geometry={geometry}
                 head={resolvedCellHead(cell)}
                 stroke={resolvedCellStroke(cell)}
-                level={cell.level ?? 2}
+                shaft={resolvedCellShaft(cell)}
               />
-              <MathLabel
-                tex={cell.label}
-                x={geometry.midpoint.x + geometry.normal.x * 20}
-                y={geometry.midpoint.y + geometry.normal.y * 20}
-                width={Math.min(
-                  220,
-                  Math.max(52, displayTex(cell.label).length * 11 + 26),
-                )}
-                color="#273244"
-                size={17}
-                paper
-              />
+              {cell.label && (() => {
+                const point = cellLabelPoint(
+                  geometry,
+                  resolvedCellLabelPosition(cell),
+                );
+                return (
+                  <MathLabel
+                    tex={cell.label}
+                    x={point.x}
+                    y={point.y}
+                    width={Math.min(
+                      220,
+                      Math.max(52, displayTex(cell.label).length * 11 + 26),
+                    )}
+                    color="#273244"
+                    size={17}
+                    paper
+                  />
+                );
+              })()}
             </g>
           );
         })}
@@ -1752,7 +1721,7 @@ export function DiagramCanvas({
           const geometry = cell ? getCellGeometry(previewDoc, cell) : null;
           if (!cell || !geometry) return null;
           return (
-            <g aria-label="2-cell curvature control">
+            <g aria-label="attached-arrow curvature control">
               <line
                 x1={geometry.baseMidpoint.x}
                 y1={geometry.baseMidpoint.y}
@@ -1868,13 +1837,6 @@ export function DiagramCanvas({
                 <FloatingCellEditor
                   key={arrow.id}
                   item={{ kind: 'arrow', value: committedArrow }}
-                  onChangeLevel={(level, label) =>
-                    onChangeSelectionLevel(
-                      { kind: 'arrow', id: arrow.id },
-                      level,
-                      label,
-                    )
-                  }
                   onCommitLabel={(label) => {
                     setLiveLabel(null);
                     onCommitLabel({ kind: 'arrow', id: arrow.id }, label);
@@ -1934,13 +1896,6 @@ export function DiagramCanvas({
                 <FloatingCellEditor
                   key={cell.id}
                   item={{ kind: 'cell', value: committedCell }}
-                  onChangeLevel={(level, label) =>
-                    onChangeSelectionLevel(
-                      { kind: 'cell', id: cell.id },
-                      level,
-                      label,
-                    )
-                  }
                   onCommitLabel={(label) => {
                     setLiveLabel(null);
                     onCommitLabel({ kind: 'cell', id: cell.id }, label);
@@ -1976,26 +1931,9 @@ export function DiagramCanvas({
             />
           ) : (
             <>
-              <path
-                d={`M ${gesture.source.point.x - 2} ${gesture.source.point.y} L ${connectTarget.point.x - 2} ${connectTarget.point.y}`}
-                fill="none"
-                stroke={connectionError ? '#b34b55' : '#273244'}
-                strokeWidth="1.6"
-                strokeDasharray="6 5"
-                opacity=".78"
-              />
-              <path
-                d={`M ${gesture.source.point.x + 2} ${gesture.source.point.y} L ${connectTarget.point.x + 2} ${connectTarget.point.y}`}
-                fill="none"
-                stroke={connectionError ? '#b34b55' : '#273244'}
-                strokeWidth="1.6"
-                strokeDasharray="6 5"
-                markerEnd="url(#xyq-canvas-arrow)"
-                opacity=".78"
-              />
-              {previewMode === 'three' && (
+              {previewAttachedShaft === 'double' && (
                 <path
-                  d={`M ${gesture.source.point.x} ${gesture.source.point.y} L ${connectTarget.point.x} ${connectTarget.point.y}`}
+                  d={`M ${gesture.source.point.x - 2} ${gesture.source.point.y} L ${connectTarget.point.x - 2} ${connectTarget.point.y}`}
                   fill="none"
                   stroke={connectionError ? '#b34b55' : '#273244'}
                   strokeWidth="1.6"
@@ -2003,6 +1941,19 @@ export function DiagramCanvas({
                   opacity=".78"
                 />
               )}
+              <path
+                d={
+                  previewAttachedShaft === 'double'
+                    ? `M ${gesture.source.point.x + 2} ${gesture.source.point.y} L ${connectTarget.point.x + 2} ${connectTarget.point.y}`
+                    : `M ${gesture.source.point.x} ${gesture.source.point.y} L ${connectTarget.point.x} ${connectTarget.point.y}`
+                }
+                fill="none"
+                stroke={connectionError ? '#b34b55' : '#273244'}
+                strokeWidth="1.6"
+                strokeDasharray="6 5"
+                markerEnd="url(#xyq-canvas-arrow)"
+                opacity=".78"
+              />
             </>
           )}
           {connectTarget.kind === 'point' && (

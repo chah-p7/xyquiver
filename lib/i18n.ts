@@ -25,8 +25,8 @@ export function ui(language: UiLanguage, zh: string, en: string) {
 
 const chineseDocumentTitles: Record<string, string> = {
   'Quasi-category composition 2-simplex': '拟范畴复合二单形',
-  'Pasting of 2-cells': '二胞腔粘合',
-  'Native 2-cell': '原生二胞腔',
+  'Pasting of attached arrows': '附着箭头粘合',
+  'Parallel double arrow': '平行双线箭头',
   'Parallel deformation arrows': '平行形变箭头',
   'Homotopy stabilization': '同伦稳定化',
   'Snake lemma': '蛇引理',
