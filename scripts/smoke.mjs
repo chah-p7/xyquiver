@@ -132,16 +132,19 @@ Object.assign(
   styled.arrows.find((arrow) => arrow.id === 'q-h'),
   { stroke: 'double', head: 'none', tail: 'mapsto' },
 );
+Object.assign(styled.cells[0], { stroke: 'dashed', head: 'arrow' });
 const styledSvg = generateSvg(styled);
 const styledXy = generateXyPic(styled, 'snippet').text;
 if (
   !styledSvg.includes('marker-start="url(#xyq-export-hook)"') ||
   !styledSvg.includes('marker-start="url(#xyq-export-mapsto)"') ||
   !styledSvg.includes('stroke-dasharray="11 7"') ||
+  !styledSvg.includes('stroke-dasharray="9 6"') ||
   !styledXy.includes('@{^{(}-->>}') ||
-  !styledXy.includes('@{|=}')
+  !styledXy.includes('@{|=}') ||
+  !styledXy.includes('\\ar@{-->}')
 ) {
   throw new Error(
-    'arrow styles: combined body, tail, and head were not exported',
+    'cell styles: combined dimension, body, tail, and head were not exported',
   );
 }

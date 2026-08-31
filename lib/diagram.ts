@@ -7,6 +7,7 @@ export type ArrowHead = 'arrow' | 'twohead' | 'none';
 export type ArrowTail = 'none' | 'hook' | 'mapsto';
 export type LabelSide = 'left' | 'right';
 export type CellHead = 'arrow' | 'reverse' | 'equality' | 'none';
+export type CellStroke = 'solid' | 'dashed' | 'dotted' | 'none';
 
 export interface Point {
   x: number;
@@ -50,6 +51,17 @@ export interface DiagramTwoCell {
   label: string;
   color: string;
   head?: CellHead;
+  stroke?: CellStroke;
+}
+
+export function resolvedCellStroke(cell: DiagramTwoCell): CellStroke {
+  return cell.stroke ?? (cell.head === 'none' ? 'none' : 'solid');
+}
+
+export function resolvedCellHead(
+  cell: DiagramTwoCell,
+): Exclude<CellHead, 'equality'> {
+  return cell.head === 'equality' ? 'none' : (cell.head ?? 'arrow');
 }
 
 export interface DiagramGrid {
@@ -951,8 +963,17 @@ export function generateSvg(
       if (!geometry) return '';
       const color = colorOrDefault(cell.color, '#5b4bc4');
       const offset = geometry.normal;
-      const reverse = cell.head === 'reverse';
-      const hasHead = cell.head !== 'equality' && cell.head !== 'none';
+      const stroke = resolvedCellStroke(cell);
+      const direction = resolvedCellHead(cell);
+      const reverse = direction === 'reverse';
+      const hasHead = direction !== 'none';
+      const dash =
+        stroke === 'dashed'
+          ? ' stroke-dasharray="9 6"'
+          : stroke === 'dotted'
+            ? ' stroke-dasharray="1 6"'
+            : '';
+      const linecap = stroke === 'dotted' ? 'round' : 'butt';
       const tip = reverse ? geometry.start : geometry.end;
       const tipDirection = reverse
         ? { x: -geometry.direction.x, y: -geometry.direction.y }
@@ -990,15 +1011,15 @@ export function generateSvg(
         const y2 = reverse
           ? end.y
           : end.y - geometry.direction.y * (hasHead ? 8.5 : 0);
-        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="${linecap}"${dash}/>`;
       };
       const head =
-        cell.head === 'equality' || cell.head === 'none'
+        direction === 'none' || stroke === 'none'
           ? ''
           : `<path d="M ${round(wingA.x)} ${round(wingA.y)} L ${round(tip.x)} ${round(tip.y)} L ${round(wingB.x)} ${round(wingB.y)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
       const labelX = geometry.midpoint.x + geometry.normal.x * 20;
       const labelY = geometry.midpoint.y + geometry.normal.y * 20;
-      const shaft = cell.head === 'none' ? '' : `${line(-2.6)}${line(2.6)}`;
+      const shaft = stroke === 'none' ? '' : `${line(-2.6)}${line(2.6)}`;
       return `${shaft}${head}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
     })
     .join('');
@@ -1146,12 +1167,19 @@ export function generateXyPic(
     const upper = sourceIsUpper ? sourceArrow : targetArrow;
     const lower = sourceIsUpper ? targetArrow : sourceArrow;
     const label = safeTex(cell.label);
+    const stroke = resolvedCellStroke(cell);
+    const direction = resolvedCellHead(cell);
+    if (stroke === 'dashed' || stroke === 'dotted') {
+      warnings.push(
+        `Native 2-cell ${cell.label || cell.id} uses a ${stroke} body; \\xtwocell exports it as solid.`,
+      );
+    }
     const orientation =
-      cell.head === 'equality'
-        ? `=${label}`
-        : cell.head === 'none'
-          ? `\\omit ${label}`
-          : (cell.head === 'reverse' ? !sourceIsUpper : sourceIsUpper)
+      stroke === 'none'
+        ? `\\omit ${label}`
+        : direction === 'none'
+          ? `=${label}`
+          : (direction === 'reverse' ? !sourceIsUpper : sourceIsUpper)
             ? label
             : `^${label}`;
     const hop = hopFor(sourceNode, targetNode, xs, ys);
@@ -1226,14 +1254,33 @@ export function generateXyPic(
       );
       continue;
     }
+    const stroke = resolvedCellStroke(cell);
+    const direction = resolvedCellHead(cell);
     const style =
-      cell.head === 'reverse'
-        ? '@{<=}'
-        : cell.head === 'equality'
-          ? '@{=}'
-          : cell.head === 'none'
-            ? '@{}'
-            : '@{=>}';
+      stroke === 'none'
+        ? '@{}'
+        : stroke === 'solid'
+          ? direction === 'reverse'
+            ? '@{<=}'
+            : direction === 'none'
+              ? '@{=}'
+              : '@{=>}'
+          : direction === 'reverse'
+            ? stroke === 'dashed'
+              ? '@{<--}'
+              : '@{<.}'
+            : direction === 'none'
+              ? stroke === 'dashed'
+                ? '@{--}'
+                : '@{.}'
+              : stroke === 'dashed'
+                ? '@{-->}'
+                : '@{.>}';
+    if (stroke === 'dashed' || stroke === 'dotted') {
+      warnings.push(
+        `2-cell ${cell.label || cell.id} uses Xy-pic's nearest ${stroke} shaft glyph.`,
+      );
+    }
     const label = cell.label ? `^{${safeTex(cell.label)}}` : '';
     generalCellCommands.push(
       `\\POS "${sourceAlias}" \\ar${style} "${targetAlias}"${label}`,
@@ -1663,7 +1710,11 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       (item.targetArrow !== undefined &&
         typeof item.targetArrow !== 'string') ||
       (item.head !== undefined &&
-        !['arrow', 'reverse', 'equality', 'none'].includes(item.head as string))
+        !['arrow', 'reverse', 'equality', 'none'].includes(
+          item.head as string,
+        )) ||
+      (item.stroke !== undefined &&
+        !['solid', 'dashed', 'dotted', 'none'].includes(item.stroke as string))
     ) {
       return null;
     }
@@ -1727,6 +1778,9 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       label: item.label,
       color: item.color,
       head: (item.head as CellHead | undefined) ?? 'arrow',
+      ...(item.stroke === undefined
+        ? {}
+        : { stroke: item.stroke as CellStroke }),
     });
   }
 

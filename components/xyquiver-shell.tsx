@@ -37,6 +37,7 @@ import {
   type EditorTool,
 } from '@/components/diagram-canvas';
 import { ArrowStylePopover } from '@/components/arrow-style-popover';
+import { CellStylePopover } from '@/components/cell-style-popover';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -96,7 +97,6 @@ import {
   validateDocument,
   type ArrowId,
   type CellAnchor,
-  type CellHead,
   type DiagramArrow,
   type DiagramDocument,
   type DiagramNode,
@@ -120,8 +120,6 @@ const tools: Array<{
 }> = [
   { id: 'select', label: 'Select', key: 'V', icon: MousePointer2 },
   { id: 'object', label: 'Object', key: 'O', icon: CirclePlus },
-  { id: 'arrow', label: '1-cell', key: 'A', icon: ArrowRight },
-  { id: 'cell', label: '2-cell', key: 'T', icon: Sparkles },
 ];
 
 const examples = [
@@ -436,46 +434,10 @@ function Inspector({
           </div>
           <div className="space-y-2">
             <Label>2-cell arrow style</Label>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    className="w-full justify-between"
-                  />
-                }
-              >
-                {cell.head === 'reverse'
-                  ? 'Arrowhead toward source  ⇐'
-                  : cell.head === 'equality'
-                    ? 'Equality  ='
-                    : cell.head === 'none'
-                      ? 'Label only  (omit glyph)'
-                      : 'Arrowhead toward target  ⇒'}
-                <ChevronDown data-icon="inline-end" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-64">
-                <DropdownMenuRadioGroup
-                  value={cell.head ?? 'arrow'}
-                  onValueChange={(value) =>
-                    onPatchCell(cell.id, { head: value as CellHead })
-                  }
-                >
-                  <DropdownMenuRadioItem value="arrow">
-                    Arrowhead toward target ⇒
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="reverse">
-                    Arrowhead toward source ⇐
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="equality">
-                    Equality =
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="none">
-                    Label only (omit 2-cell glyph)
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <CellStylePopover
+              cell={cell}
+              onPatch={(patch) => onPatchCell(cell.id, patch)}
+            />
           </div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-950">
             {isNativeParallelCell(doc, cell) ? (
@@ -701,7 +663,7 @@ export function XyQuiverShell() {
   const [pendingArrow, setPendingArrow] = useState<ArrowId | null>(null);
   const [canvasCancelEpoch, setCanvasCancelEpoch] = useState(0);
   const [status, setStatus] = useState(
-    'Quick draw: drag object-to-object for a 1-cell; drag an object to an arrow for a 2-cell.',
+    'Drag to draw: endpoints infer the level; double-click empty space to create an object.',
   );
   const importRef = useRef<HTMLInputElement>(null);
   const doc = history.present;
@@ -867,12 +829,8 @@ export function XyQuiverShell() {
       const shortcuts: Record<string, EditorTool> = {
         v: 'select',
         o: 'object',
-        a: 'arrow',
-        t: 'cell',
         '1': 'select',
         '2': 'object',
-        '3': 'arrow',
-        '4': 'cell',
       };
       const nextTool = shortcuts[event.key.toLowerCase()];
       if (nextTool) {
@@ -1120,6 +1078,7 @@ export function XyQuiverShell() {
               label,
               color: '#5b4bc4',
               head: 'arrow',
+              stroke: 'solid',
             },
           ],
         };
@@ -1389,6 +1348,7 @@ export function XyQuiverShell() {
               label,
               color: '#5b4bc4',
               head: 'arrow' as const,
+              stroke: 'solid' as const,
             },
           ],
         };
@@ -1432,10 +1392,10 @@ export function XyQuiverShell() {
       next === 'object'
         ? 'Click the canvas to create an object.'
         : next === 'arrow'
-          ? 'Drag between object or grid anchors to force a 1-cell.'
+          ? 'Level 1 override: drag between object or grid anchors.'
           : next === 'cell'
-            ? 'Drag between objects or arrows to force a 2-cell.'
-            : 'Quick draw: drag object-to-object for 1-cells, or to an arrow for 2-cells.',
+            ? 'Level 2 override: drag between object or arrow anchors.'
+            : 'Drag to draw with automatic level; double-click empty space for an object.',
     );
   };
 
@@ -1447,10 +1407,10 @@ export function XyQuiverShell() {
     setPendingArrow(null);
     setStatus(
       mode === 'auto'
-        ? 'Smart connection: endpoint dimensions choose 1-cell or 2-cell.'
+        ? 'Automatic level: endpoint dimensions choose 1-cell or 2-cell.'
         : mode === 'arrow'
-          ? 'Forced 1-cell: drag between object or grid anchors.'
-          : 'Forced 2-cell: drag between any two object or arrow anchors.',
+          ? 'Level 1 override: drag between object or grid anchors.'
+          : 'Level 2 override: drag between any two object or arrow anchors.',
     );
   };
 
@@ -1606,12 +1566,12 @@ export function XyQuiverShell() {
           <div className="absolute left-[78px] top-4 z-10 hidden items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground sm:flex">
             <span className="font-semibold text-foreground">
               {tool === 'select'
-                ? 'Quick draw · auto'
+                ? 'Drag to draw · level auto'
                 : tool === 'object'
                   ? 'Place object'
                   : tool === 'arrow'
-                    ? 'Force 1-cell'
-                    : 'Force 2-cell'}
+                    ? 'Drag to draw · level 1 override'
+                    : 'Drag to draw · level 2 override'}
             </span>
             <span className="text-border">/</span>
             <span>
@@ -1646,6 +1606,7 @@ export function XyQuiverShell() {
             onMoveNodes={moveNodes}
             onSetArrowCurve={setArrowCurve}
             onPatchArrow={patchArrow}
+            onPatchCell={patchCell}
             onBeginLabelEdit={(item) => {
               setSelections([item]);
               setEditing(item);
@@ -1664,63 +1625,53 @@ export function XyQuiverShell() {
           aria-label="Diagram tools"
           className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border bg-card/92 p-1.5 shadow-[0_8px_28px_rgb(45_37_32/10%)] backdrop-blur"
         >
-          {tools
-            .filter(({ id }) => id === 'select' || id === 'object')
-            .map(({ id, label, key, icon: Icon }) => (
-              <Button
-                key={id}
-                variant={tool === id ? 'secondary' : 'ghost'}
-                size="icon-lg"
-                className={
-                  tool === id
-                    ? 'bg-accent text-primary shadow-none'
-                    : 'text-muted-foreground'
-                }
-                aria-label={`${label} tool`}
-                aria-pressed={tool === id}
-                title={`${label} (${key})`}
-                onClick={() => switchTool(id)}
-              >
-                <Icon />
-              </Button>
-            ))}
+          {tools.map(({ id, label, key, icon: Icon }) => (
+            <Button
+              key={id}
+              variant={tool === id ? 'secondary' : 'ghost'}
+              size="icon-lg"
+              className={
+                tool === id
+                  ? 'bg-accent text-primary shadow-none'
+                  : 'text-muted-foreground'
+              }
+              aria-label={`${label} tool`}
+              aria-pressed={tool === id}
+              title={`${label} (${key})`}
+              onClick={() => switchTool(id)}
+            >
+              <Icon />
+            </Button>
+          ))}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <Button
-                  variant={
-                    tool === 'arrow' || tool === 'cell' ? 'secondary' : 'ghost'
-                  }
+                  variant={connectionMode === 'auto' ? 'ghost' : 'secondary'}
                   size="icon-lg"
                   className={
-                    tool === 'arrow' || tool === 'cell'
+                    connectionMode !== 'auto'
                       ? 'bg-accent text-primary shadow-none'
                       : 'text-muted-foreground'
                   }
-                  aria-label={`Connection mode: ${
+                  aria-label={`Draw level: ${
                     connectionMode === 'auto'
-                      ? 'smart'
+                      ? 'infer from endpoints'
                       : connectionMode === 'arrow'
-                        ? 'forced 1-cell'
-                        : 'forced 2-cell'
+                        ? 'level 1 override'
+                        : 'level 2 override'
                   }`}
-                  title={`Connection mode: ${
+                  title={`Draw level: ${
                     connectionMode === 'auto'
-                      ? 'Smart'
+                      ? 'Auto · infer from endpoints'
                       : connectionMode === 'arrow'
-                        ? 'Force 1-cell'
-                        : 'Force 2-cell'
-                  } (A / T)`}
+                        ? 'Level 1 override'
+                        : 'Level 2 override'
+                  }`}
                 />
               }
             >
-              {connectionMode === 'auto' ? (
-                <MousePointer2 />
-              ) : connectionMode === 'cell' ? (
-                <Sparkles />
-              ) : (
-                <ArrowRight />
-              )}
+              <ArrowLeftRight />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="center" className="w-64">
               <DropdownMenuRadioGroup
@@ -1730,14 +1681,15 @@ export function XyQuiverShell() {
                 }
               >
                 <DropdownMenuRadioItem value="auto" className="min-h-10">
-                  <MousePointer2 />
-                  Smart connection
+                  <ArrowLeftRight />
+                  Auto · infer from endpoints
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="min-h-10">
-                  <ArrowRight />
-                  Force connection dimension
+                  <SlidersHorizontal />
+                  Level override
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56">
                   <DropdownMenuRadioGroup
@@ -1748,11 +1700,11 @@ export function XyQuiverShell() {
                   >
                     <DropdownMenuRadioItem value="arrow" className="min-h-10">
                       <ArrowRight />
-                      1-cell →
+                      Level 1 · 1-cell →
                     </DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="cell" className="min-h-10">
                       <Sparkles />
-                      2-cell ⇒
+                      Level 2 · 2-cell ⇒
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuSubContent>
@@ -1771,7 +1723,11 @@ export function XyQuiverShell() {
             <Braces />
           </Button>
           <div className="mt-auto rounded-md border bg-muted/60 px-1.5 py-1 font-mono text-[9px] text-muted-foreground">
-            {tools.find((item) => item.id === tool)?.key}
+            {tool === 'arrow'
+              ? 'L1'
+              : tool === 'cell'
+                ? 'L2'
+                : tools.find((item) => item.id === tool)?.key}
           </div>
         </nav>
 

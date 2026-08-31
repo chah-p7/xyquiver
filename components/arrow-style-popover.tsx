@@ -23,7 +23,7 @@ const arrowStrokeOptions: Array<{ value: ArrowStroke; label: string }> = [
   { value: 'solid', label: 'Solid' },
   { value: 'dashed', label: 'Dashed' },
   { value: 'dotted', label: 'Dotted' },
-  { value: 'double', label: 'Double' },
+  { value: 'double', label: 'Double shaft' },
 ];
 
 const arrowTailOptions: Array<{ value: ArrowTail; label: string }> = [
@@ -196,9 +196,14 @@ export function ArrowStylePopover({
         className="w-[352px] gap-4 rounded-xl p-4 shadow-xl"
       >
         <PopoverHeader>
-          <PopoverTitle>Arrow style</PopoverTitle>
+          <div className="flex items-center gap-2">
+            <PopoverTitle>1-cell style</PopoverTitle>
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+              Level 1
+            </span>
+          </div>
           <PopoverDescription>
-            Combine the body, tail, and head just like quiver.
+            Body styling does not change this morphism into a 2-cell.
           </PopoverDescription>
         </PopoverHeader>
 

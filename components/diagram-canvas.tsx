@@ -10,6 +10,7 @@ import {
 import katex from 'katex';
 
 import { ArrowStylePopover } from '@/components/arrow-style-popover';
+import { CellStylePopover } from '@/components/cell-style-popover';
 import {
   areParallel,
   canPlaceNodes,
@@ -20,6 +21,8 @@ import {
   matrixAxes,
   nodeMetrics,
   quadraticPoint,
+  resolvedCellHead,
+  resolvedCellStroke,
   SCENE_HEIGHT,
   SCENE_WIDTH,
   selectionKey,
@@ -29,6 +32,7 @@ import {
   type CellAnchor,
   type DiagramArrow,
   type DiagramDocument,
+  type DiagramTwoCell,
   type NodeId,
   type Point,
   type Selection,
@@ -64,6 +68,7 @@ interface DiagramCanvasProps {
   onMoveNodes: (positions: Record<NodeId, Point>) => void;
   onSetArrowCurve: (id: ArrowId, curve: number) => void;
   onPatchArrow: (id: ArrowId, patch: Partial<DiagramArrow>) => void;
+  onPatchCell: (id: string, patch: Partial<DiagramTwoCell>) => void;
   onBeginLabelEdit: (selection: Selection) => void;
   onCommitLabel: (selection: Selection, label: string) => void;
   onCancelLabelEdit: () => void;
@@ -391,14 +396,16 @@ function CellGlyph({
   color,
   selected,
   head,
+  stroke,
 }: {
   geometry: NonNullable<ReturnType<typeof getCellGeometry>>;
   color: string;
   selected: boolean;
-  head: 'arrow' | 'reverse' | 'equality' | 'none';
+  head: 'arrow' | 'reverse' | 'none';
+  stroke: 'solid' | 'dashed' | 'dotted' | 'none';
 }) {
   const reverse = head === 'reverse';
-  const hasHead = head === 'arrow' || head === 'reverse';
+  const hasHead = stroke !== 'none' && (head === 'arrow' || head === 'reverse');
   const tip = reverse ? geometry.start : geometry.end;
   const direction = reverse
     ? { x: -geometry.direction.x, y: -geometry.direction.y }
@@ -434,7 +441,10 @@ function CellGlyph({
         fill="none"
         stroke={color}
         strokeWidth={selected ? 2.4 : 1.75}
-        strokeLinecap="round"
+        strokeLinecap={stroke === 'dotted' ? 'round' : 'butt'}
+        strokeDasharray={
+          stroke === 'dashed' ? '9 6' : stroke === 'dotted' ? '1 6' : undefined
+        }
         pointerEvents="none"
       />
     );
@@ -449,8 +459,8 @@ function CellGlyph({
   };
   return (
     <>
-      {head !== 'none' && line(-2.6)}
-      {head !== 'none' && line(2.6)}
+      {stroke !== 'none' && line(-2.6)}
+      {stroke !== 'none' && line(2.6)}
       {hasHead && (
         <path
           d={`M ${wingA.x} ${wingA.y} L ${tip.x} ${tip.y} L ${wingB.x} ${wingB.y}`}
@@ -484,6 +494,7 @@ export function DiagramCanvas({
   onMoveNodes,
   onSetArrowCurve,
   onPatchArrow,
+  onPatchCell,
   onBeginLabelEdit,
   onCommitLabel,
   onCancelLabelEdit,
@@ -677,7 +688,7 @@ export function DiagramCanvas({
     if (completed.kind === 'connect') {
       if (!completed.moved) {
         if (completed.source.kind === 'point') {
-          onQuickNode(completed.source.point);
+          onSelect(null);
         } else if (completed.source.kind === 'node') {
           if (tool === 'arrow' && connectionMode === 'arrow')
             onNodeAction(completed.source.id);
@@ -889,6 +900,12 @@ export function DiagramCanvas({
               });
             }
           }
+        }}
+        onDoubleClick={(event) => {
+          if (tool !== 'select') return;
+          event.preventDefault();
+          const point = clientToScene(event.clientX, event.clientY);
+          onQuickNode(snapPointToMatrix(doc, point));
         }}
       />
 
@@ -1134,7 +1151,8 @@ export function DiagramCanvas({
                 geometry={geometry}
                 color={color}
                 selected={selected}
-                head={cell.head ?? 'arrow'}
+                head={resolvedCellHead(cell)}
+                stroke={resolvedCellStroke(cell)}
               />
               {!sameSelection(editing, 'cell', cell.id) && (
                 <MathLabel
@@ -1399,6 +1417,54 @@ export function DiagramCanvas({
                   align="center"
                   sideOffset={10}
                   onPatch={(patch) => onPatchArrow(arrow.id, patch)}
+                />
+              </div>
+            </foreignObject>
+          );
+        })()}
+
+      {selections.length === 1 &&
+        selections[0].kind === 'cell' &&
+        tool === 'select' &&
+        !editing &&
+        !gesture &&
+        (() => {
+          const cell = previewDoc.cells.find(
+            (item) => item.id === selections[0].id,
+          );
+          const geometry = cell ? getCellGeometry(previewDoc, cell) : null;
+          if (!cell || !geometry) return null;
+          const width = 170;
+          const height = 48;
+          const x = Math.min(
+            SCENE_WIDTH - width - 12,
+            Math.max(12, geometry.midpoint.x - width / 2),
+          );
+          const y = Math.min(
+            SCENE_HEIGHT - height - 12,
+            Math.max(12, geometry.midpoint.y - 84),
+          );
+          return (
+            <foreignObject
+              x={x}
+              y={y}
+              width={width}
+              height={height}
+              overflow="visible"
+              pointerEvents="all"
+            >
+              <div
+                className="flex size-full items-center justify-center rounded-xl border border-indigo-200 bg-[#fbfaf7]/96 p-1.5 text-[#302d34] shadow-[0_10px_30px_rgb(46_29_44/16%)] backdrop-blur"
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                <CellStylePopover
+                  cell={cell}
+                  compact
+                  side="top"
+                  align="center"
+                  sideOffset={10}
+                  onPatch={(patch) => onPatchCell(cell.id, patch)}
                 />
               </div>
             </foreignObject>
