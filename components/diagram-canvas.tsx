@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,6 +21,7 @@ import {
   getCellGeometry,
   matrixAxes,
   matrixCellEdges,
+  nodeLabelWidth,
   nodeMetrics,
   normalizeMathTex,
   quadraticPoint,
@@ -195,6 +197,7 @@ function MathLabel({
   color = '#222735',
   size = 17,
   paper = false,
+  anchor = 'center',
 }: {
   tex: string;
   x: number;
@@ -204,16 +207,54 @@ function MathLabel({
   color?: string;
   size?: number;
   paper?: boolean;
+  anchor?: 'center' | 'first';
 }) {
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [firstGlyphCenter, setFirstGlyphCenter] = useState(10);
   const html = katex.renderToString(normalizeMathTex(tex) || '\\cdot', {
     displayMode: false,
     throwOnError: false,
     strict: 'ignore',
     output: 'html',
   });
+  useLayoutEffect(() => {
+    if (anchor !== 'first') return;
+    let active = true;
+    const measure = () => {
+      const root = labelRef.current;
+      const foreignObject = root?.closest('foreignObject');
+      if (!root || !foreignObject) return;
+      const glyph = [...root.querySelectorAll<HTMLElement>('span')].find(
+        (candidate) =>
+          candidate.childElementCount === 0 &&
+          Boolean(candidate.textContent?.replace(/\u200b/g, '').trim()) &&
+          candidate.getBoundingClientRect().width > 0,
+      );
+      if (!glyph) return;
+      const rootRect = root.getBoundingClientRect();
+      const glyphRect = glyph.getBoundingClientRect();
+      const objectRect = foreignObject.getBoundingClientRect();
+      const scale = objectRect.width / width || 1;
+      const measured =
+        (glyphRect.left - rootRect.left + glyphRect.width / 2) / scale;
+      if (active && Number.isFinite(measured)) {
+        setFirstGlyphCenter((current) =>
+          Math.abs(current - measured) > 0.1 ? measured : current,
+        );
+      }
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+    return () => {
+      active = false;
+    };
+  }, [anchor, html, width]);
+  const labelClass = paper
+    ? 'whitespace-nowrap rounded-[4px] bg-[#fbfaf7]/94 px-1.5 py-0.5'
+    : 'whitespace-nowrap';
   return (
     <foreignObject
-      x={x - width / 2}
+      x={anchor === 'first' ? x : x - width / 2}
       y={y - height / 2}
       width={width}
       height={height}
@@ -221,14 +262,26 @@ function MathLabel({
       pointerEvents="none"
     >
       <div
-        className="flex size-full items-center justify-center leading-none"
+        className={
+          anchor === 'first'
+            ? 'relative size-full leading-none'
+            : 'flex size-full items-center justify-center leading-none'
+        }
         style={{ color, fontSize: `${size}px` }}
       >
         <span
-          className={
-            paper
-              ? 'whitespace-nowrap rounded-[4px] bg-[#fbfaf7]/94 px-1.5 py-0.5'
-              : 'whitespace-nowrap'
+          ref={labelRef}
+          className={labelClass}
+          style={
+            anchor === 'first'
+              ? {
+                  display: 'inline-block',
+                  left: 0,
+                  position: 'absolute',
+                  top: '50%',
+                  transform: `translate(${-firstGlyphCenter}px, -50%)`,
+                }
+              : undefined
           }
           dangerouslySetInnerHTML={{ __html: html }}
         />
@@ -1356,10 +1409,11 @@ export function DiagramCanvas({
                   tex={node.label}
                   x={0}
                   y={0}
-                  width={metrics.width + 34}
+                  width={nodeLabelWidth(node) + 20}
                   height={50}
                   color="#1f2532"
                   size={22}
+                  anchor="first"
                 />
               ) : null}
               {(selected || pending) && (

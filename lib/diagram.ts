@@ -247,6 +247,55 @@ export function displayTex(value: string): string {
     .trim();
 }
 
+function balancedGroupEnd(value: string, start: number): number {
+  if (value[start] !== '{') return start;
+  let depth = 0;
+  for (let index = start; index < value.length; index += 1) {
+    if (value[index] === '\\') {
+      index += 1;
+      continue;
+    }
+    if (value[index] === '{') depth += 1;
+    if (value[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return value.length;
+}
+
+function texTokenEnd(value: string, start: number): number {
+  if (value[start] === '{') return balancedGroupEnd(value, start);
+  if (value[start] !== '\\') {
+    return start + (value.codePointAt(start)! > 0xffff ? 2 : 1);
+  }
+  let end = start + 1;
+  if (/[A-Za-z]/.test(value[end] ?? '')) {
+    while (/[A-Za-z]/.test(value[end] ?? '')) end += 1;
+  } else if (end < value.length) {
+    end += value.codePointAt(end)! > 0xffff ? 2 : 1;
+  }
+  const command = value.slice(start + 1, end);
+  if (
+    /^(?:mathcal|mathbb|mathrm|mathbf|mathit|operatorname|text|txt|hat|bar|tilde|widehat|widetilde)$/.test(
+      command,
+    ) &&
+    value[end] === '{'
+  ) {
+    return balancedGroupEnd(value, end);
+  }
+  return end;
+}
+
+/** The first visible TeX glyph; following primes and scripts stay in the overlay. */
+export function firstNodeTexAtom(value: string): string {
+  const tex = normalizeMathTex(value)
+    .replace(/[\r\n]/g, ' ')
+    .trim();
+  if (!tex) return '';
+  return tex.slice(0, texTokenEnd(tex, 0));
+}
+
 export function snap(value: number): number {
   return Math.round(value / SNAP) * SNAP;
 }
@@ -325,17 +374,13 @@ export function snapPointToMatrix(doc: DiagramDocument, point: Point): Point {
 
 export function nodeMetrics(node: DiagramNode) {
   if (node.ghost) return { width: 14, height: 14 };
-  const label = displayTex(node.label);
-  return {
-    // KaTeX renders at 1.21em and scripts still contribute to the inline box.
-    // Keep this deliberately a little wider than the visible glyphs so arrow
-    // geometry never cuts through a single-line object label.
-    width: Math.max(40, label.length * 13.5 + 24),
-    height: 40,
-  };
+  return { width: 40, height: 40 };
 }
 
-const NODE_ARROW_CLEARANCE = 18;
+export function nodeLabelWidth(node: DiagramNode): number {
+  if (node.ghost) return 14;
+  return Math.max(40, displayTex(node.label).length * 13.5 + 24);
+}
 
 function normalize(vector: Point): Point {
   const length = Math.hypot(vector.x, vector.y) || 1;
@@ -390,38 +435,20 @@ export function getArrowGeometry(
   const normal = { x: chord.y, y: -chord.x };
   const sourceSize = nodeMetrics(source);
   const targetSize = nodeMetrics(target);
-  const control = {
-    x: (source.x + target.x) / 2 + normal.x * arrow.curve,
-    y: (source.y + target.y) / 2 + normal.y * arrow.curve,
-  };
-  const sourceDirection = {
-    x: control.x - source.x,
-    y: control.y - source.y,
-  };
-  const targetDirection = {
-    x: control.x - target.x,
-    y: control.y - target.y,
-  };
   const start = pointOnEllipse(
     source,
-    {
-      x: sourceSize.width / 2 + NODE_ARROW_CLEARANCE,
-      y: sourceSize.height / 2 + NODE_ARROW_CLEARANCE,
-    },
-    Math.hypot(sourceDirection.x, sourceDirection.y) < 1
-      ? chord
-      : sourceDirection,
+    { x: sourceSize.width / 2 + 9, y: sourceSize.height / 2 + 9 },
+    chord,
   );
   const end = pointOnEllipse(
     target,
-    {
-      x: targetSize.width / 2 + NODE_ARROW_CLEARANCE,
-      y: targetSize.height / 2 + NODE_ARROW_CLEARANCE,
-    },
-    Math.hypot(targetDirection.x, targetDirection.y) < 1
-      ? { x: -chord.x, y: -chord.y }
-      : targetDirection,
+    { x: targetSize.width / 2 + 9, y: targetSize.height / 2 + 9 },
+    { x: -chord.x, y: -chord.y },
   );
+  const control = {
+    x: (start.x + end.x) / 2 + normal.x * arrow.curve,
+    y: (start.y + end.y) / 2 + normal.y * arrow.curve,
+  };
   const midpoint = quadraticPoint(start, control, end, 0.5);
   const tangent = quadraticTangent(start, control, end, 0.5);
   const middleNormal = { x: tangent.y, y: -tangent.x };
@@ -1003,10 +1030,11 @@ export function diagramBounds(doc: DiagramDocument, padding = 42) {
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
   for (const node of doc.nodes) {
-    const { width, height } = nodeMetrics(node);
-    minX = Math.min(minX, node.x - width / 2);
+    const { width: anchorWidth, height } = nodeMetrics(node);
+    const labelWidth = nodeLabelWidth(node);
+    minX = Math.min(minX, node.x - anchorWidth / 2);
     minY = Math.min(minY, node.y - height / 2);
-    maxX = Math.max(maxX, node.x + width / 2);
+    maxX = Math.max(maxX, node.x - anchorWidth / 2 + labelWidth);
     maxY = Math.max(maxY, node.y + height / 2);
   }
   for (const arrow of doc.arrows) {
@@ -1151,7 +1179,7 @@ export function generateSvg(
     .filter((node) => !node.ghost)
     .map(
       (node) =>
-        `<text x="${round(node.x)}" y="${round(node.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="24" font-weight="500" fill="#111827" stroke="#ffffff" stroke-width="8" paint-order="stroke fill">${xml(displayTex(node.label))}</text>`,
+        `<text x="${round(node.x - 9)}" y="${round(node.y)}" text-anchor="start" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="24" font-weight="500" fill="#111827" stroke="#ffffff" stroke-width="8" paint-order="stroke fill">${xml(displayTex(node.label))}</text>`,
     )
     .join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" width="${bounds.width}" height="${bounds.height}" role="img"><title>${xml(doc.title || 'XyQuiver diagram')}</title><desc>Categorical diagram exported as editable vector paths and text by XyQuiver.</desc><defs><marker id="${prefix}-arrow" viewBox="-11 -6 11 12" refX="0" refY="0" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -10 -5.25 L 0 0 L -10 5.25" fill="none" stroke="#1f2937" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></marker><marker id="${prefix}-twohead" viewBox="-16 -7 16 14" refX="0" refY="0" markerWidth="17" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -9 -5.5 L 0 0 L -9 5.5 M -15 -5.5 L -6 0 L -15 5.5" fill="none" stroke="#1f2937" stroke-width="1.9" stroke-linecap="round"/></marker><marker id="${prefix}-hook" viewBox="0 -8 13 16" refX="0" refY="0" markerWidth="13" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 0 0 C 0 -7 8 -7 10 -2" fill="none" stroke="#1f2937" stroke-width="1.9" stroke-linecap="round"/></marker><marker id="${prefix}-mapsto" viewBox="0 -8 9 16" refX="1" refY="0" markerWidth="9" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 1 -7 L 1 7" fill="none" stroke="#1f2937" stroke-width="1.9" stroke-linecap="round"/></marker></defs>${background}<g>${arrowMarkup}</g><g>${cellMarkup}</g><g>${nodeMarkup}</g></svg>`;
@@ -1161,6 +1189,13 @@ function safeTex(value: string): string {
   return normalizeMathTex(value)
     .replace(/[\r\n]/g, ' ')
     .trim();
+}
+
+function anchoredNodeTex(value: string): string {
+  const full = safeTex(value);
+  const first = firstNodeTexAtom(full);
+  if (!full || !first || full === first) return full || '{}';
+  return `\\hbox{\\rlap{$${full}$}\\phantom{$${first}$}}`;
 }
 
 function hopFor(
@@ -1436,7 +1471,7 @@ export function generateXyPic(
           (candidate) => candidate.x === x && candidate.y === y,
         );
         if (!node) return '{}';
-        const label = node.ghost ? '{}' : safeTex(node.label) || '{}';
+        const label = node.ghost ? '{}' : anchoredNodeTex(node.label);
         const alias = nodeAliases.get(node.id);
         const aliasCommand = alias ? `\\ar@{}[]|*{}="${alias}"` : '';
         return [label, aliasCommand, ...(commands.get(node.id) ?? [])]

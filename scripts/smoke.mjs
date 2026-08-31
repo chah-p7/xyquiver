@@ -3,12 +3,14 @@ import {
   constrainArrowCurve,
   deleteSelections,
   exampleDocuments,
+  firstNodeTexAtom,
   getArrowGeometry,
   getCellGeometry,
   generateSvg,
   generateXyPic,
   isNativeParallelCell,
   matrixCellEdges,
+  nodeLabelWidth,
   nodeMetrics,
   normalizeMathTex,
   resolveConnectionLevel,
@@ -80,18 +82,27 @@ const incomingEndpoints = parallel.arrows
   .map((arrow) => getArrowGeometry(parallel, arrow)?.end)
   .filter(Boolean);
 if (
-  targetMetrics.width < 275 ||
+  firstNodeTexAtom(longTarget.label) !== 'C' ||
+  targetMetrics.width !== nodeMetrics(parallel.nodes[0]).width ||
+  nodeLabelWidth(longTarget) <= targetMetrics.width ||
   incomingEndpoints.length < 3 ||
-  incomingEndpoints.some((point) => {
-    const x = (point.x - longTarget.x) / (targetMetrics.width / 2);
-    const y = (point.y - longTarget.y) / (targetMetrics.height / 2);
-    return x * x + y * y <= 1;
-  }) ||
-  new Set(incomingEndpoints.map((point) => Math.round(point.y))).size < 3
+  new Set(
+    incomingEndpoints.map(
+      (point) => `${Math.round(point.x)}:${Math.round(point.y)}`,
+    ),
+  ).size !== 1
 ) {
   throw new Error(
-    'label clearance: curved arrows overlapped or converged on the vertex label',
+    'node anchoring: the first TeX atom was not treated like a single-character vertex',
   );
+}
+
+const anchoredParallelXy = generateXyPic(parallel, 'snippet').text;
+if (
+  !anchoredParallelXy.includes("\\hbox{\\rlap{$C'_i=C+d\\rho_2") ||
+  !anchoredParallelXy.includes("=C+d\\rho'_2$}\\phantom{$C$}}")
+) {
+  throw new Error('Xy-pic: extended node labels were not first-atom anchored');
 }
 
 for (const [id, document] of Object.entries(exampleDocuments)) {
