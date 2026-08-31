@@ -21,8 +21,6 @@ import {
   displayTex,
   getArrowGeometry,
   getCellGeometry,
-  matrixAxes,
-  matrixCellEdges,
   nodeLabelWidth,
   nodeMetrics,
   normalizeMathTex,
@@ -32,6 +30,7 @@ import {
   resolveConnectionLevel,
   SCENE_HEIGHT,
   SCENE_WIDTH,
+  sceneGridEdges,
   selectionKey,
   selectionsInRect,
   snapPointToMatrix,
@@ -116,6 +115,14 @@ type Gesture =
       kind: 'curve';
       pointerId: number;
       arrow: ArrowId;
+      curve: number;
+      clientStart: Point;
+      moved: boolean;
+    }
+  | {
+      kind: 'cell-curve';
+      pointerId: number;
+      cell: string;
       curve: number;
       clientStart: Point;
       moved: boolean;
@@ -548,8 +555,9 @@ function CellGlyph({
   const hasHead = stroke !== 'none' && (head === 'arrow' || head === 'reverse');
   const tip = reverse ? geometry.start : geometry.end;
   const direction = reverse
-    ? { x: -geometry.direction.x, y: -geometry.direction.y }
-    : geometry.direction;
+    ? { x: -geometry.startTangent.x, y: -geometry.startTangent.y }
+    : geometry.endTangent;
+  const tipNormal = { x: direction.y, y: -direction.x };
   const shaftTip = {
     x: tip.x - direction.x * (head === 'arrow' || head === 'reverse' ? 8.5 : 0),
     y: tip.y - direction.y * (head === 'arrow' || head === 'reverse' ? 8.5 : 0),
@@ -559,25 +567,29 @@ function CellGlyph({
       x: geometry.start.x + geometry.normal.x * amount,
       y: geometry.start.y + geometry.normal.y * amount,
     };
+    const control = {
+      x: geometry.control.x + geometry.normal.x * amount,
+      y: geometry.control.y + geometry.normal.y * amount,
+    };
     const end = {
       x: geometry.end.x + geometry.normal.x * amount,
       y: geometry.end.y + geometry.normal.y * amount,
     };
     const from = reverse
       ? {
-          x: start.x + geometry.direction.x * (hasHead ? 8.5 : 0),
-          y: start.y + geometry.direction.y * (hasHead ? 8.5 : 0),
+          x: start.x + geometry.startTangent.x * (hasHead ? 8.5 : 0),
+          y: start.y + geometry.startTangent.y * (hasHead ? 8.5 : 0),
         }
       : start;
     const to = reverse
       ? end
       : {
-          x: end.x - geometry.direction.x * (hasHead ? 8.5 : 0),
-          y: end.y - geometry.direction.y * (hasHead ? 8.5 : 0),
+          x: end.x - geometry.endTangent.x * (hasHead ? 8.5 : 0),
+          y: end.y - geometry.endTangent.y * (hasHead ? 8.5 : 0),
         };
     return (
       <path
-        d={`M ${from.x} ${from.y} L ${to.x} ${to.y}`}
+        d={`M ${from.x} ${from.y} Q ${control.x} ${control.y} ${to.x} ${to.y}`}
         fill="none"
         stroke={color}
         strokeWidth="1.75"
@@ -590,12 +602,12 @@ function CellGlyph({
     );
   };
   const wingA = {
-    x: shaftTip.x + geometry.normal.x * 5.8,
-    y: shaftTip.y + geometry.normal.y * 5.8,
+    x: shaftTip.x + tipNormal.x * 5.8,
+    y: shaftTip.y + tipNormal.y * 5.8,
   };
   const wingB = {
-    x: shaftTip.x - geometry.normal.x * 5.8,
-    y: shaftTip.y - geometry.normal.y * 5.8,
+    x: shaftTip.x - tipNormal.x * 5.8,
+    y: shaftTip.y - tipNormal.y * 5.8,
   };
   return (
     <>
@@ -663,9 +675,8 @@ export function DiagramCanvas({
     liveLabel && selectionKey(liveLabel.selection) === activeLabelEditorKey
       ? liveLabel
       : null;
-  const grid = matrixAxes(doc, true);
-  const gridColumns = matrixCellEdges(grid.columns, 0, SCENE_WIDTH);
-  const gridRows = matrixCellEdges(grid.rows, 0, SCENE_HEIGHT);
+  const gridColumns = sceneGridEdges(SCENE_WIDTH);
+  const gridRows = sceneGridEdges(SCENE_HEIGHT);
 
   const clientToScene = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -702,6 +713,13 @@ export function DiagramCanvas({
           arrow.id === gesture.arrow
             ? { ...arrow, curve: gesture.curve }
             : arrow,
+        ),
+      };
+    } else if (gesture?.kind === 'cell-curve') {
+      preview = {
+        ...doc,
+        cells: doc.cells.map((cell) =>
+          cell.id === gesture.cell ? { ...cell, curve: gesture.curve } : cell,
         ),
       };
     }
@@ -792,6 +810,22 @@ export function DiagramCanvas({
     });
   };
 
+  const beginCellCurve = (event: ReactPointerEvent, cell: string) => {
+    const item = doc.cells.find((candidate) => candidate.id === cell);
+    if (!item) return;
+    event.preventDefault();
+    event.stopPropagation();
+    capture(event.pointerId);
+    setGesture({
+      kind: 'cell-curve',
+      pointerId: event.pointerId,
+      cell,
+      curve: item.curve ?? 0,
+      clientStart: { x: event.clientX, y: event.clientY },
+      moved: false,
+    });
+  };
+
   const pointerMoved = (
     event: ReactPointerEvent,
     clientStart: Point,
@@ -831,6 +865,20 @@ export function DiagramCanvas({
         moved,
         valid: canPlaceNodes(doc, positions),
       });
+      return;
+    }
+    if (gesture.kind === 'cell-curve') {
+      const cell = doc.cells.find((item) => item.id === gesture.cell);
+      const geometry = cell ? getCellGeometry(doc, cell) : null;
+      if (!cell || !geometry) return;
+      let curve =
+        Math.round(
+          ((point.x - geometry.baseMidpoint.x) * geometry.baseNormal.x +
+            (point.y - geometry.baseMidpoint.y) * geometry.baseNormal.y) /
+            2,
+        ) * 2;
+      curve = clamp(curve, -220, 220);
+      setGesture({ ...gesture, curve, moved });
       return;
     }
     const arrow = doc.arrows.find((item) => item.id === gesture.arrow);
@@ -927,6 +975,19 @@ export function DiagramCanvas({
     }
     if (completed.kind === 'curve') {
       if (completed.moved) onSetArrowCurve(completed.arrow, completed.curve);
+      return;
+    }
+    if (completed.kind === 'cell-curve') {
+      if (completed.moved) {
+        onPatchCell(completed.cell, { curve: completed.curve });
+        onStatus(
+          ui(
+            language,
+            `已将二胞腔弯曲度设为 ${completed.curve}。`,
+            `Set 2-cell curvature to ${completed.curve}.`,
+          ),
+        );
+      }
       return;
     }
     if (completed.moved) {
@@ -1348,7 +1409,7 @@ export function DiagramCanvas({
               }}
             >
               <path
-                d={`M ${geometry.start.x} ${geometry.start.y} L ${geometry.end.x} ${geometry.end.y}`}
+                d={geometry.path}
                 fill="none"
                 stroke="transparent"
                 strokeWidth="22"
@@ -1619,6 +1680,48 @@ export function DiagramCanvas({
         })()}
 
       {selections.length === 1 &&
+        selections[0].kind === 'cell' &&
+        tool === 'select' &&
+        (() => {
+          const cell = previewDoc.cells.find(
+            (item) => item.id === selections[0].id,
+          );
+          const geometry = cell ? getCellGeometry(previewDoc, cell) : null;
+          if (!cell || !geometry) return null;
+          return (
+            <g aria-label="2-cell curvature control">
+              <line
+                x1={geometry.baseMidpoint.x}
+                y1={geometry.baseMidpoint.y}
+                x2={geometry.control.x}
+                y2={geometry.control.y}
+                stroke="#8a4e75"
+                strokeWidth="1"
+                strokeDasharray="3 4"
+                opacity=".45"
+                pointerEvents="none"
+              />
+              <circle
+                cx={geometry.control.x}
+                cy={geometry.control.y}
+                r="7"
+                fill="#fbfaf7"
+                stroke="#8a4e75"
+                strokeWidth="2"
+                className="cursor-ns-resize"
+                pointerEvents="all"
+                onPointerDown={(event) => beginCellCurve(event, cell.id)}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onPatchCell(cell.id, { curve: 0 });
+                }}
+              />
+            </g>
+          );
+        })()}
+
+      {selections.length === 1 &&
         selections[0].kind === 'arrow' &&
         tool === 'select' &&
         (() => {
@@ -1749,6 +1852,7 @@ export function DiagramCanvas({
             geometry.midpoint,
             width,
             height,
+            geometry.control,
           );
           return (
             <foreignObject

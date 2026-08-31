@@ -54,6 +54,8 @@ export interface DiagramTwoCell {
   targetPath?: ArrowId[];
   label: string;
   color: string;
+  /** Signed quadratic bend in scene units, matching 1-cell curvature. */
+  curve?: number;
   head?: CellHead;
   stroke?: CellStroke;
 }
@@ -119,8 +121,8 @@ export const SCENE_WIDTH = 1000;
 export const SCENE_HEIGHT = 650;
 export const SNAP = 40;
 export const DEFAULT_MATRIX_GRID: DiagramGrid = {
-  columns: [120, 310, 500, 690, 880],
-  rows: [90, 210, 330, 450, 570],
+  columns: [80, 280, 480, 680, 880],
+  rows: [80, 200, 320, 440, 560],
 };
 
 const greek: Record<string, string> = {
@@ -302,10 +304,18 @@ export function snap(value: number): number {
   return Math.round(value / SNAP) * SNAP;
 }
 
-function nearest(value: number, candidates: number[]): number {
-  return candidates.reduce((best, candidate) =>
-    Math.abs(candidate - value) < Math.abs(best - value) ? candidate : best,
+export function sceneGridCenters(maximum: number): number[] {
+  return Array.from(
+    { length: Math.max(0, Math.floor(maximum / SNAP) - 1) },
+    (_, index) => (index + 1) * SNAP,
   );
+}
+
+export function sceneGridEdges(maximum: number): number[] {
+  return Array.from(
+    { length: Math.max(0, Math.floor(maximum / SNAP)) },
+    (_, index) => SNAP / 2 + index * SNAP,
+  ).filter((edge) => edge < maximum);
 }
 
 export function matrixAxes(
@@ -324,6 +334,41 @@ export function matrixAxes(
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
   return { columns, rows };
+}
+
+function medianAxisGap(values: number[]): number {
+  const gaps = values
+    .slice(1)
+    .map((value, index) => value - values[index])
+    .filter((gap) => gap > 0)
+    .sort((left, right) => left - right);
+  if (gaps.length === 0) return SNAP;
+  const middle = Math.floor(gaps.length / 2);
+  return gaps.length % 2 ? gaps[middle] : (gaps[middle - 1] + gaps[middle]) / 2;
+}
+
+/**
+ * Xy-pic matrices use one spacing value per axis, while the editor permits
+ * non-uniform grid gaps. Insert empty matrix slots for unusually large gaps so
+ * exported slopes and vertical alignment still resemble the canvas.
+ */
+function proportionalMatrixAxis(values: number[]): number[] {
+  if (values.length < 2) return values;
+  const unit = medianAxisGap(values);
+  const expanded = [values[0]];
+  for (let index = 1; index < values.length; index += 1) {
+    const previous = values[index - 1];
+    const current = values[index];
+    const steps = Math.min(
+      8,
+      Math.max(1, Math.round((current - previous) / unit)),
+    );
+    for (let step = 1; step < steps; step += 1) {
+      expanded.push(previous + ((current - previous) * step) / steps);
+    }
+    expanded.push(current);
+  }
+  return expanded;
 }
 
 /**
@@ -366,11 +411,16 @@ export function resolveConnectionLevel(
   return source === 'arrow' || target === 'arrow' ? 'cell' : 'arrow';
 }
 
-export function snapPointToMatrix(doc: DiagramDocument, point: Point): Point {
-  const axes = matrixAxes(doc, true);
+export function snapPointToMatrix(_doc: DiagramDocument, point: Point): Point {
   return {
-    x: axes.columns.length ? nearest(point.x, axes.columns) : snap(point.x),
-    y: axes.rows.length ? nearest(point.y, axes.rows) : snap(point.y),
+    x: Math.min(
+      Math.floor((SCENE_WIDTH - SNAP) / SNAP) * SNAP,
+      Math.max(SNAP, snap(point.x)),
+    ),
+    y: Math.min(
+      Math.floor((SCENE_HEIGHT - SNAP) / SNAP) * SNAP,
+      Math.max(SNAP, snap(point.y)),
+    ),
   };
 }
 
@@ -381,7 +431,10 @@ export function nodeMetrics(node: DiagramNode) {
 
 export function nodeLabelWidth(node: DiagramNode): number {
   if (node.ghost) return 14;
-  return Math.max(40, displayTex(node.label).length * 13.5 + 24);
+  // TeX commands such as \operatorname expand to far fewer visible glyphs than
+  // their source spelling. displayTex already strips those commands, and this
+  // deliberately compact estimate keeps the shaft close to the final glyph.
+  return Math.max(40, displayTex(node.label).length * 11 + 18);
 }
 
 function normalize(vector: Point): Point {
@@ -516,7 +569,10 @@ export function arrowGridAnchors(
 ): ArrowGridAnchor[] {
   const geometry = getArrowGeometry(doc, arrow);
   if (!geometry) return [];
-  const axes = matrixAxes(doc, true);
+  const axes = {
+    columns: sceneGridCenters(SCENE_WIDTH),
+    rows: sceneGridCenters(SCENE_HEIGHT),
+  };
   const candidates: ArrowGridAnchor[] = [];
   for (const x of axes.columns) {
     for (const y of axes.rows) {
@@ -708,23 +764,45 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
       );
     }
   }
-  const direction = normalize({ x: to.x - from.x, y: to.y - from.y });
-  const normal = { x: direction.y, y: -direction.x };
+  const chordDirection = normalize({ x: to.x - from.x, y: to.y - from.y });
   const start = {
-    x: from.x + direction.x * (sourceAnchor.kind === 'arrow' ? 5 : 0),
-    y: from.y + direction.y * (sourceAnchor.kind === 'arrow' ? 5 : 0),
+    x: from.x + chordDirection.x * (sourceAnchor.kind === 'arrow' ? 5 : 0),
+    y: from.y + chordDirection.y * (sourceAnchor.kind === 'arrow' ? 5 : 0),
   };
   const end = {
-    x: to.x - direction.x * (targetAnchor.kind === 'arrow' ? 5 : 0),
-    y: to.y - direction.y * (targetAnchor.kind === 'arrow' ? 5 : 0),
+    x: to.x - chordDirection.x * (targetAnchor.kind === 'arrow' ? 5 : 0),
+    y: to.y - chordDirection.y * (targetAnchor.kind === 'arrow' ? 5 : 0),
   };
-  const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const baseMidpoint = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  };
+  const baseNormal = {
+    x: chordDirection.y,
+    y: -chordDirection.x,
+  };
+  const curve = Math.min(220, Math.max(-220, cell.curve ?? 0));
+  const control = {
+    x: baseMidpoint.x + baseNormal.x * curve,
+    y: baseMidpoint.y + baseNormal.y * curve,
+  };
+  const midpoint = quadraticPoint(start, control, end, 0.5);
+  const direction = quadraticTangent(start, control, end, 0.5);
+  const normal = { x: direction.y, y: -direction.x };
+  const startTangent = quadraticTangent(start, control, end, 0);
+  const endTangent = quadraticTangent(start, control, end, 1);
   return {
     start,
     end,
+    control,
+    baseMidpoint,
+    baseNormal,
     midpoint,
     direction,
     normal,
+    startTangent,
+    endTangent,
+    path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`,
     sourceAnchor,
     targetAnchor,
   };
@@ -958,7 +1036,21 @@ export function selectionsInRect(
   }
   for (const cell of doc.cells) {
     const geometry = getCellGeometry(doc, cell);
-    if (geometry && segmentIntersects(geometry.start, geometry.end)) {
+    if (!geometry) continue;
+    const points = Array.from({ length: 25 }, (_, index) =>
+      quadraticPoint(
+        geometry.start,
+        geometry.control,
+        geometry.end,
+        index / 24,
+      ),
+    );
+    if (
+      points.some(contains) ||
+      points
+        .slice(1)
+        .some((point, index) => segmentIntersects(points[index], point))
+    ) {
       selections.push({ kind: 'cell', id: cell.id });
     }
   }
@@ -1131,6 +1223,16 @@ export function diagramBounds(doc: DiagramDocument, padding = 42) {
       maxY = Math.max(maxY, point.y + 30);
     }
   }
+  for (const cell of doc.cells) {
+    const geometry = getCellGeometry(doc, cell);
+    if (!geometry) continue;
+    for (const point of [geometry.start, geometry.control, geometry.end]) {
+      minX = Math.min(minX, point.x - 30);
+      minY = Math.min(minY, point.y - 30);
+      maxX = Math.max(maxX, point.x + 30);
+      maxY = Math.max(maxY, point.y + 30);
+    }
+  }
   return {
     x: Math.floor(minX - padding),
     y: Math.floor(minY - padding),
@@ -1213,42 +1315,47 @@ export function generateSvg(
       const linecap = stroke === 'dotted' ? 'round' : 'butt';
       const tip = reverse ? geometry.start : geometry.end;
       const tipDirection = reverse
-        ? { x: -geometry.direction.x, y: -geometry.direction.y }
-        : geometry.direction;
+        ? { x: -geometry.startTangent.x, y: -geometry.startTangent.y }
+        : geometry.endTangent;
+      const tipNormal = { x: tipDirection.y, y: -tipDirection.x };
       const shaftTip = {
         x: tip.x - tipDirection.x * 8.5,
         y: tip.y - tipDirection.y * 8.5,
       };
       const wingA = {
-        x: shaftTip.x + geometry.normal.x * 5.8,
-        y: shaftTip.y + geometry.normal.y * 5.8,
+        x: shaftTip.x + tipNormal.x * 5.8,
+        y: shaftTip.y + tipNormal.y * 5.8,
       };
       const wingB = {
-        x: shaftTip.x - geometry.normal.x * 5.8,
-        y: shaftTip.y - geometry.normal.y * 5.8,
+        x: shaftTip.x - tipNormal.x * 5.8,
+        y: shaftTip.y - tipNormal.y * 5.8,
       };
       const line = (amount: number) => {
         const start = {
           x: geometry.start.x + offset.x * amount,
           y: geometry.start.y + offset.y * amount,
         };
+        const control = {
+          x: geometry.control.x + offset.x * amount,
+          y: geometry.control.y + offset.y * amount,
+        };
         const end = {
           x: geometry.end.x + offset.x * amount,
           y: geometry.end.y + offset.y * amount,
         };
         const x1 = reverse
-          ? start.x + geometry.direction.x * (hasHead ? 8.5 : 0)
+          ? start.x + geometry.startTangent.x * (hasHead ? 8.5 : 0)
           : start.x;
         const y1 = reverse
-          ? start.y + geometry.direction.y * (hasHead ? 8.5 : 0)
+          ? start.y + geometry.startTangent.y * (hasHead ? 8.5 : 0)
           : start.y;
         const x2 = reverse
           ? end.x
-          : end.x - geometry.direction.x * (hasHead ? 8.5 : 0);
+          : end.x - geometry.endTangent.x * (hasHead ? 8.5 : 0);
         const y2 = reverse
           ? end.y
-          : end.y - geometry.direction.y * (hasHead ? 8.5 : 0);
-        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="${linecap}"${dash}/>`;
+          : end.y - geometry.endTangent.y * (hasHead ? 8.5 : 0);
+        return `<path d="M ${round(x1)} ${round(y1)} Q ${round(control.x)} ${round(control.y)} ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="${linecap}"${dash}/>`;
       };
       const head =
         direction === 'none' || stroke === 'none'
@@ -1363,8 +1470,8 @@ export function generateXyPic(
     return wrap(empty);
   }
   const axes = matrixAxes(doc);
-  const xs = axes.columns;
-  const ys = axes.rows;
+  const xs = proportionalMatrixAxis(axes.columns);
+  const ys = proportionalMatrixAxis(axes.rows);
   const commands = new Map<NodeId, string[]>();
   const consumedArrows = new Set<ArrowId>();
   const nativeBoundaryOwners = new Map<ArrowId, CellId>();
@@ -1423,6 +1530,11 @@ export function generateXyPic(
     if (stroke === 'dashed' || stroke === 'dotted') {
       warnings.push(
         `Native 2-cell ${cell.label || cell.id} uses a ${stroke} body; \\xtwocell exports it as solid.`,
+      );
+    }
+    if (Math.abs(cell.curve ?? 0) >= 1) {
+      warnings.push(
+        `Native 2-cell ${cell.label || cell.id} has editor curvature; \\xtwocell keeps its native straight body.`,
       );
     }
     const orientation =
@@ -1533,8 +1645,14 @@ export function generateXyPic(
       );
     }
     const label = cell.label ? `^{${safeTex(cell.label)}}` : '';
+    const curve =
+      Math.abs(cell.curve ?? 0) < 1
+        ? ''
+        : (cell.curve ?? 0) > 0
+          ? `@/^${round(Math.abs(cell.curve ?? 0) / 45)}em/`
+          : `@/_${round(Math.abs(cell.curve ?? 0) / 45)}em/`;
     generalCellCommands.push(
-      `\\POS "${sourceAlias}" \\ar${style} "${targetAlias}"${label}`,
+      `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${label}`,
     );
   }
 
@@ -1573,7 +1691,17 @@ export function generateXyPic(
   const initializer = nativeCellCount > 0 ? '\\UseAllTwocells\n' : '';
   const trailing =
     generalCellCommands.length > 0 ? `\n${generalCellCommands.join('\n')}` : '';
-  const core = `\\begin{xy}\n${initializer}\\xymatrix @C=4.5pc @R=3.8pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
+  const columnGap =
+    xs.length > 1 ? (xs.at(-1)! - xs[0]) / (xs.length - 1) : SNAP;
+  const rowGap = ys.length > 1 ? (ys.at(-1)! - ys[0]) / (ys.length - 1) : SNAP;
+  // Keep one physical conversion for both axes. This preserves the canvas
+  // aspect ratio and avoids inflating sparse matrices merely to fill a page.
+  const sceneUnit = 0.016;
+  const columnSpacing = round(
+    Math.min(5.5, Math.max(1.8, columnGap * sceneUnit)),
+  );
+  const rowSpacing = round(Math.min(5.5, Math.max(1.8, rowGap * sceneUnit)));
+  const core = `\\begin{xy}\n${initializer}\\xymatrix @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
   return wrap(core);
 }
 
@@ -1620,9 +1748,9 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
       rows: [...DEFAULT_MATRIX_GRID.rows],
     },
     nodes: [
-      node('q-x0', 'x_0', 120, 450),
-      node('q-x1', 'x_1', 500, 90),
-      node('q-x2', 'x_2', 880, 450),
+      node('q-x0', 'x_0', 80, 440),
+      node('q-x1', 'x_1', 480, 80),
+      node('q-x2', 'x_2', 880, 440),
     ],
     arrows: [
       arrow('q-f', 'q-x0', 'q-x1', 'f', 0),
@@ -1651,9 +1779,9 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
       rows: [...DEFAULT_MATRIX_GRID.rows],
     },
     nodes: [
-      node('p-c', '\\mathcal{C}', 120, 450),
-      node('p-d', '\\mathcal{D}', 500, 90),
-      node('p-e', '\\mathcal{E}', 880, 450),
+      node('p-c', '\\mathcal{C}', 80, 440),
+      node('p-d', '\\mathcal{D}', 480, 80),
+      node('p-e', '\\mathcal{E}', 880, 440),
     ],
     arrows: [
       arrow('p-f', 'p-c', 'p-d', 'F', 96),
@@ -1693,10 +1821,10 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 2,
     title: 'Native 2-cell',
-    grid: { columns: [220, 500, 780], rows: [140, 300, 460] },
+    grid: { columns: [200, 400, 600, 800], rows: [160, 320, 480] },
     nodes: [
-      node('n-a', '\\mathcal{C}', 220, 300),
-      node('n-b', '\\mathcal{D}', 780, 300),
+      node('n-a', '\\mathcal{C}', 200, 320),
+      node('n-b', '\\mathcal{D}', 800, 320),
     ],
     arrows: [
       arrow('a-f', 'n-a', 'n-b', 'F', 72),
@@ -1718,11 +1846,11 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     title: 'Parallel deformation arrows',
     grid: {
       columns: [160, 320, 440, 560, 720, 880],
-      rows: [130, 310, 490],
+      rows: [120, 320, 520],
     },
     nodes: [
-      node('n-c', 'C', 320, 310),
-      node('n-cp', "C'_i=C+d\\rho_2=C+d\\rho'_2", 560, 310),
+      node('n-c', 'C', 320, 320),
+      node('n-cp', "C'_i=C+d\\rho_2=C+d\\rho'_2", 560, 320),
     ],
     arrows: [
       arrow('a-rho2', 'n-c', 'n-cp', '\\rho_2', 180),
@@ -1758,14 +1886,14 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     version: 2,
     title: 'Homotopy stabilization',
     grid: {
-      columns: [150, 325, 500, 675, 850],
-      rows: [105, 175, 330, 570],
+      columns: [80, 280, 480, 680, 880],
+      rows: [80, 200, 320, 440, 560],
     },
     nodes: [
-      node('n-xl', 'X', 150, 105),
-      node('n-xr', 'X', 850, 105),
-      node('n-bp', 'B^{p+1}(\\mathbb{R}/\\hbar\\mathbb{Z})_{conn}', 500, 330),
-      node('n-omega', '\\Omega^{p+2}_{cl}', 500, 570),
+      node('n-xl', 'X', 80, 80),
+      node('n-xr', 'X', 880, 80),
+      node('n-bp', 'B^{p+1}(\\mathbb{R}/\\hbar\\mathbb{Z})_{conn}', 480, 320),
+      node('n-omega', '\\Omega^{p+2}_{cl}', 480, 560),
     ],
     arrows: [
       arrow(
@@ -1803,34 +1931,34 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     version: 2,
     title: 'Snake lemma',
     grid: {
-      columns: [80, 270, 500, 730, 920],
-      rows: [55, 150, 270, 390, 510, 610],
+      columns: [80, 280, 480, 680, 880],
+      rows: [40, 160, 280, 400, 520, 600],
     },
     nodes: [
-      node('s-top-f', '0', 270, 55),
-      node('s-top-g', '0', 500, 55),
-      node('s-top-h', '0', 730, 55),
-      node('s-ker0', '0', 80, 150),
-      node('s-ker-f', '\\ker f', 270, 150),
-      node('s-ker-g', '\\ker g', 500, 150),
-      node('s-ker-h', '\\ker h', 730, 150),
-      node('s-a0', '0', 80, 270),
-      node('s-a1', "A'", 270, 270),
-      node('s-a', 'A', 500, 270),
-      node('s-a2', "A''", 730, 270),
-      node('s-a3', '0', 920, 270),
-      node('s-b0', '0', 80, 390),
-      node('s-b1', "B'", 270, 390),
-      node('s-b', 'B', 500, 390),
-      node('s-b2', "B''", 730, 390),
-      node('s-b3', '0', 920, 390),
-      node('s-coker-f', '\\operatorname{coker} f', 270, 510),
-      node('s-coker-g', '\\operatorname{coker} g', 500, 510),
-      node('s-coker-h', '\\operatorname{coker} h', 730, 510),
-      node('s-coker0', '0', 920, 510),
-      node('s-bottom-f', '0', 270, 610),
-      node('s-bottom-g', '0', 500, 610),
-      node('s-bottom-h', '0', 730, 610),
+      node('s-top-f', '0', 280, 40),
+      node('s-top-g', '0', 480, 40),
+      node('s-top-h', '0', 680, 40),
+      node('s-ker0', '0', 80, 160),
+      node('s-ker-f', '\\ker f', 280, 160),
+      node('s-ker-g', '\\ker g', 480, 160),
+      node('s-ker-h', '\\ker h', 680, 160),
+      node('s-a0', '0', 80, 280),
+      node('s-a1', "A'", 280, 280),
+      node('s-a', 'A', 480, 280),
+      node('s-a2', "A''", 680, 280),
+      node('s-a3', '0', 880, 280),
+      node('s-b0', '0', 80, 400),
+      node('s-b1', "B'", 280, 400),
+      node('s-b', 'B', 480, 400),
+      node('s-b2', "B''", 680, 400),
+      node('s-b3', '0', 880, 400),
+      node('s-coker-f', '\\operatorname{coker} f', 280, 520),
+      node('s-coker-g', '\\operatorname{coker} g', 480, 520),
+      node('s-coker-h', '\\operatorname{coker} h', 680, 520),
+      node('s-coker0', '0', 880, 520),
+      node('s-bottom-f', '0', 280, 600),
+      node('s-bottom-g', '0', 480, 600),
+      node('s-bottom-h', '0', 680, 600),
     ],
     arrows: [
       arrow('s-top-f-ker', 's-top-f', 's-ker-f', ''),
@@ -2028,6 +2156,9 @@ export function validateDocument(value: unknown): DiagramDocument | null {
         !['arrow', 'reverse', 'equality', 'none'].includes(
           item.head as string,
         )) ||
+      (item.curve !== undefined &&
+        (!Number.isFinite(item.curve) ||
+          Math.abs(item.curve as number) > 220)) ||
       (item.stroke !== undefined &&
         !['solid', 'dashed', 'dotted', 'none'].includes(item.stroke as string))
     ) {
@@ -2092,6 +2223,7 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       targetPath,
       label: item.label,
       color: item.color,
+      ...(item.curve === undefined ? {} : { curve: item.curve as number }),
       head: (item.head as CellHead | undefined) ?? 'arrow',
       ...(item.stroke === undefined
         ? {}

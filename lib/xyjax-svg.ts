@@ -141,7 +141,7 @@ function resizeLengthAttribute(
   svg.setAttribute(name, `${Number(match[1]) * ratio}${match[2]}`);
 }
 
-function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 160) {
+function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 120) {
   const current = (svg.getAttribute('viewBox') ?? '')
     .trim()
     .split(/\s+/)
@@ -159,37 +159,26 @@ function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 160) {
   host.appendChild(svg);
   document.body.appendChild(host);
   try {
-    // Measure the top-level graphics and explicitly apply its SVG transform.
-    // Measuring MathJax's nested MathML group without its outer y-axis flip
-    // creates a gigantic viewBox and collapses the preview to a line.
-    const graphics = [...svg.children].find(
-      (element): element is SVGGraphicsElement =>
-        element.tagName.toLowerCase() === 'g',
-    );
-    const bounds = graphics?.getBBox();
-    const matrix = graphics?.getCTM();
+    // Measuring the mounted root includes every transformed XyJax child in
+    // root viewBox coordinates. Do not union this with MathJax's original
+    // viewBox: that box can be extremely wide and collapse the real diagram
+    // into what looks like a single horizontal line.
+    const bounds = svg.getBBox();
     if (
       !bounds ||
-      !matrix ||
-      ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
+      ![bounds.x, bounds.y, bounds.width, bounds.height].every(
+        Number.isFinite,
+      ) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
     ) {
       return;
     }
-    const [x, y, width, height] = current;
-    const corners = [
-      new DOMPoint(bounds.x, bounds.y),
-      new DOMPoint(bounds.x + bounds.width, bounds.y),
-      new DOMPoint(bounds.x, bounds.y + bounds.height),
-      new DOMPoint(bounds.x + bounds.width, bounds.y + bounds.height),
-    ].map((point) => point.matrixTransform(matrix));
-    const measuredLeft = Math.min(...corners.map((point) => point.x));
-    const measuredTop = Math.min(...corners.map((point) => point.y));
-    const measuredRight = Math.max(...corners.map((point) => point.x));
-    const measuredBottom = Math.max(...corners.map((point) => point.y));
-    const left = Math.min(x, measuredLeft - padding);
-    const top = Math.min(y, measuredTop - padding);
-    const right = Math.max(x + width, measuredRight + padding);
-    const bottom = Math.max(y + height, measuredBottom + padding);
+    const [, , width, height] = current;
+    const left = bounds.x - padding;
+    const top = bounds.y - padding;
+    const right = bounds.x + bounds.width + padding;
+    const bottom = bounds.y + bounds.height + padding;
     const nextWidth = right - left;
     const nextHeight = bottom - top;
     svg.setAttribute('viewBox', `${left} ${top} ${nextWidth} ${nextHeight}`);

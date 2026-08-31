@@ -15,6 +15,7 @@ import {
   nodeMetrics,
   normalizeMathTex,
   resolveConnectionLevel,
+  sceneGridEdges,
   validateDocument,
 } from '../lib/diagram.ts';
 import { localizedDocumentTitle } from '../lib/i18n.ts';
@@ -46,6 +47,16 @@ if (
   throw new Error('grid: snap points were not centered inside visible cells');
 }
 
+const fixedGridEdges = sceneGridEdges(200);
+if (
+  JSON.stringify(fixedGridEdges) !== JSON.stringify([20, 60, 100, 140, 180]) ||
+  fixedGridEdges.some(
+    (edge, index) => index > 0 && edge - fixedGridEdges[index - 1] !== 40,
+  )
+) {
+  throw new Error('grid: editor cells did not keep their fixed 40-unit size');
+}
+
 if (
   resolveConnectionLevel('cell', 'node', 'node') !== 'cell' ||
   resolveConnectionLevel('arrow', 'node', 'node') !== 'arrow' ||
@@ -67,7 +78,7 @@ const attachedCell = getCellGeometry(homotopy, {
 });
 if (
   !topArrow ||
-  Math.abs(topArrow.midpoint.x - 500) > 0.001 ||
+  Math.abs(topArrow.midpoint.x - 480) > 0.001 ||
   !attachedCell ||
   attachedCell.start.x <= attachedCell.end.x
 ) {
@@ -78,13 +89,36 @@ if (
 
 const topGridAnchors = arrowGridAnchors(homotopy, homotopy.arrows[0]);
 if (
-  ![325, 500, 675].every((x) =>
-    topGridAnchors.some((anchor) => anchor.x === x && anchor.y === 105),
+  ![280, 480, 680].every((x) =>
+    topGridAnchors.some((anchor) => anchor.x === x && anchor.y === 80),
   )
 ) {
   throw new Error(
     'arrow anchors: long arrows missed traversed matrix-centre anchors',
   );
+}
+
+const curvedHomotopy = JSON.parse(JSON.stringify(homotopy));
+curvedHomotopy.cells[0].curve = 80;
+const curvedCellGeometry = getCellGeometry(
+  curvedHomotopy,
+  curvedHomotopy.cells[0],
+);
+const curvedCellSvg = generateSvg(curvedHomotopy);
+const curvedCellXy = generateXyPic(curvedHomotopy, 'snippet');
+const curvedRoundTrip = validateDocument(
+  JSON.parse(JSON.stringify(curvedHomotopy)),
+);
+if (
+  !curvedCellGeometry ||
+  !curvedCellGeometry.path.includes(' Q ') ||
+  Math.abs(curvedCellGeometry.midpoint.x - curvedCellGeometry.baseMidpoint.x) <
+    10 ||
+  !curvedCellSvg.includes(' Q ') ||
+  !curvedCellXy.text.includes('\\ar@/^') ||
+  curvedRoundTrip?.cells[0].curve !== 80
+) {
+  throw new Error('2-cell curvature: canvas, SVG, Xy-pic, or JSON regressed');
 }
 
 const parallel = exampleDocuments.parallel;
@@ -188,17 +222,23 @@ if (
 
 const snake = exampleDocuments.snake;
 const connectingMap = snake.arrows.find((arrow) => arrow.id === 's-delta');
+const cokerHorizontal = getArrowGeometry(
+  snake,
+  snake.arrows.find((arrow) => arrow.id === 's-coker-f-g'),
+);
+const homotopyXy = generateXyPic(homotopy, 'snippet').text;
 if (
   snake.nodes.length !== 24 ||
   snake.arrows.length !== 30 ||
   !snake.nodes.some((node) => node.label === '\\ker h') ||
   !snake.nodes.some((node) => node.label === '\\operatorname{coker} f') ||
   connectingMap?.source !== 's-ker-h' ||
-  connectingMap.target !== 's-coker-f'
+  connectingMap.target !== 's-coker-f' ||
+  !cokerHorizontal ||
+  cokerHorizontal.start.x > 365 ||
+  !homotopyXy.includes('@C=3.2pc @R=1.92pc')
 ) {
-  throw new Error(
-    'snake lemma: the standard kernel-cokernel diagram regressed',
-  );
+  throw new Error('snake lemma or proportional Xy-pic alignment regressed');
 }
 
 for (const [id, document] of Object.entries(exampleDocuments)) {

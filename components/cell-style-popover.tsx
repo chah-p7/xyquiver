@@ -11,6 +11,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Slider } from '@/components/ui/slider';
 import {
   resolvedCellHead,
   resolvedCellStroke,
@@ -140,6 +141,7 @@ export function CellStylePopover({
   const language = useUiLanguage();
   const stroke = resolvedCellStroke(cell);
   const head = resolvedCellHead(cell);
+  const curve = cell.curve ?? 0;
   const setStroke = (next: CellStroke) =>
     onPatch({
       stroke: next,
@@ -241,6 +243,46 @@ export function CellStylePopover({
             )}
           </PopoverDescription>
         </PopoverHeader>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {ui(language, '弯曲度', 'Curvature')}
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="min-w-8 text-right font-mono text-[10px] text-muted-foreground">
+                {Math.round(curve)}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-[10px]"
+                disabled={Math.abs(curve) < 1}
+                onClick={() => onPatch({ curve: 0 })}
+              >
+                {ui(language, '归零', 'Reset')}
+              </Button>
+            </div>
+          </div>
+          <Slider
+            value={[curve]}
+            min={-220}
+            max={220}
+            step={2}
+            aria-label={ui(language, '二胞腔弯曲度', '2-cell curvature')}
+            onValueChange={(value) =>
+              onPatch({ curve: Array.isArray(value) ? value[0] : value })
+            }
+          />
+          <p className="text-[10px] leading-4 text-muted-foreground">
+            {ui(
+              language,
+              '也可直接拖动画布上的圆点；双击圆点恢复直线。',
+              'You can also drag the canvas handle; double-click it to reset.',
+            )}
+          </p>
+        </div>
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
