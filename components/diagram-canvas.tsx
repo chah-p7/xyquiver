@@ -52,6 +52,7 @@ interface DiagramCanvasProps {
   editing: Selection | null;
   tool: EditorTool;
   connectionMode: ConnectionMode;
+  showGrid: boolean;
   pendingNode: NodeId | null;
   pendingArrow: ArrowId | null;
   onCanvasPoint: (point: Point) => void;
@@ -483,6 +484,7 @@ export function DiagramCanvas({
   editing,
   tool,
   connectionMode,
+  showGrid,
   pendingNode,
   pendingArrow,
   onCanvasPoint,
@@ -911,7 +913,7 @@ export function DiagramCanvas({
         }}
       />
 
-      {grid.columns.length > 0 && grid.rows.length > 0 && (
+      {showGrid && grid.columns.length > 0 && grid.rows.length > 0 && (
         <g aria-label="Xy-pic matrix grid" pointerEvents="none">
           {grid.rows.map((y) => (
             <line
@@ -922,8 +924,8 @@ export function DiagramCanvas({
               y2={y}
               stroke="#5b5360"
               strokeWidth="1"
-              strokeDasharray="2 10"
-              opacity=".09"
+              strokeDasharray="2 8"
+              opacity=".16"
             />
           ))}
           {grid.columns.map((x) => (
@@ -935,8 +937,8 @@ export function DiagramCanvas({
               y2={grid.rows.at(-1)}
               stroke="#5b5360"
               strokeWidth="1"
-              strokeDasharray="2 10"
-              opacity=".09"
+              strokeDasharray="2 8"
+              opacity=".16"
             />
           ))}
           {grid.rows.flatMap((y) =>
@@ -945,9 +947,9 @@ export function DiagramCanvas({
                 key={`${x}-${y}`}
                 cx={x}
                 cy={y}
-                r="2.2"
+                r="2.5"
                 fill="#675d68"
-                opacity=".33"
+                opacity=".48"
               />
             )),
           )}

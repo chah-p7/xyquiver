@@ -10,16 +10,14 @@ import {
 } from 'react';
 import {
   ArrowLeftRight,
-  Braces,
   ChevronDown,
   CirclePlus,
-  Code2,
   Copy,
   Download,
   FileJson,
   FolderOpen,
+  Grid3X3,
   MousePointer2,
-  PanelBottomClose,
   Redo2,
   SlidersHorizontal,
   Trash2,
@@ -511,9 +509,9 @@ function ExportDialog({
       </DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-hidden sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Export diagram</DialogTitle>
+          <DialogTitle>Source and export</DialogTitle>
           <DialogDescription>
-            Xy-pic stays editable in Typora; SVG is a standalone vector file.
+            Preview, copy, or download every output format from one place.
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="xypic" className="min-h-0">
@@ -649,9 +647,9 @@ export function XyQuiverShell() {
   }));
   const [tool, setTool] = useState<EditorTool>('select');
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
+  const [showGrid, setShowGrid] = useState(true);
   const [selections, setSelections] = useState<Selection[]>([]);
   const [editing, setEditing] = useState<Selection | null>(null);
-  const [codeOpen, setCodeOpen] = useState(false);
   const [pendingNode, setPendingNode] = useState<NodeId | null>(null);
   const [pendingArrow, setPendingArrow] = useState<ArrowId | null>(null);
   const [canvasCancelEpoch, setCanvasCancelEpoch] = useState(0);
@@ -661,7 +659,6 @@ export function XyQuiverShell() {
   const importRef = useRef<HTMLInputElement>(null);
   const doc = history.present;
   const selection = selections.at(-1) ?? null;
-  const typora = useMemo(() => generateXyPic(doc, 'typora'), [doc]);
   const grid = useMemo(() => matrixAxes(doc, true), [doc]);
 
   const cancelCanvasGesture = useCallback(
@@ -817,6 +814,19 @@ export function XyQuiverShell() {
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
         deleteSelected();
+        return;
+      }
+      if (
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === 'g'
+      ) {
+        event.preventDefault();
+        setShowGrid((current) => {
+          setStatus(current ? 'Matrix grid hidden.' : 'Matrix grid shown.');
+          return !current;
+        });
         return;
       }
       const shortcuts: Record<string, EditorTool> = {
@@ -1407,15 +1417,6 @@ export function XyQuiverShell() {
     );
   };
 
-  const copyXyPic = async () => {
-    await navigator.clipboard.writeText(typora.text);
-    setStatus(
-      typora.warnings.length > 0
-        ? `Copied with ${typora.warnings.length} warning(s): ${typora.warnings[0]}`
-        : 'Typora-ready Xy-pic copied.',
-    );
-  };
-
   return (
     <main className="flex h-dvh min-h-[560px] flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card/95 px-3 shadow-[0_1px_8px_rgb(36_31_27/4%)] backdrop-blur">
@@ -1492,24 +1493,6 @@ export function XyQuiverShell() {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden lg:inline-flex"
-            onClick={copyXyPic}
-          >
-            <Copy data-icon="inline-start" />
-            Copy Xy-pic
-          </Button>
-          <Button
-            variant={codeOpen ? 'secondary' : 'ghost'}
-            size="sm"
-            aria-pressed={codeOpen}
-            onClick={() => setCodeOpen((open) => !open)}
-          >
-            <Code2 data-icon="inline-start" />
-            <span className="hidden sm:inline">Code</span>
-          </Button>
           <Sheet>
             <SheetTrigger
               render={
@@ -1581,6 +1564,7 @@ export function XyQuiverShell() {
             editing={editing}
             tool={tool}
             connectionMode={connectionMode}
+            showGrid={showGrid}
             pendingNode={pendingNode}
             pendingArrow={pendingArrow}
             onCanvasPoint={(point) => {
@@ -1639,14 +1623,20 @@ export function XyQuiverShell() {
           ))}
           <Separator className="my-2 w-7" />
           <Button
-            variant="ghost"
+            variant={showGrid ? 'secondary' : 'ghost'}
             size="icon-lg"
-            className="text-muted-foreground"
-            aria-label="Copy raw Xy-pic"
-            title="Copy raw Xy-pic"
-            onClick={copyXyPic}
+            className={showGrid ? 'text-primary' : 'text-muted-foreground'}
+            aria-label={showGrid ? 'Hide matrix grid' : 'Show matrix grid'}
+            aria-pressed={showGrid}
+            title={showGrid ? 'Hide matrix grid (G)' : 'Show matrix grid (G)'}
+            onClick={() => {
+              setShowGrid((current) => !current);
+              setStatus(
+                showGrid ? 'Matrix grid hidden.' : 'Matrix grid shown.',
+              );
+            }}
           >
-            <Braces />
+            <Grid3X3 />
           </Button>
           <div className="mt-auto rounded-md border bg-muted/60 px-1.5 py-1 font-mono text-[9px] text-muted-foreground">
             {tool === 'arrow'
@@ -1656,81 +1646,6 @@ export function XyQuiverShell() {
                 : tools.find((item) => item.id === tool)?.key}
           </div>
         </nav>
-
-        {codeOpen && (
-          <section
-            className="absolute bottom-3 left-[72px] right-3 z-30 h-[220px] overflow-hidden rounded-xl border border-[#312d36] bg-[#18171d] text-slate-100 shadow-[0_20px_60px_rgb(25_20_27/24%)]"
-            aria-label="Generated code"
-          >
-            <Tabs defaultValue="typora" className="h-full gap-0">
-              <div className="flex h-10 items-center border-b border-white/8 px-3">
-                <TabsList variant="line" className="h-8 text-slate-400">
-                  <TabsTrigger
-                    value="typora"
-                    className="text-xs text-slate-400 data-active:text-white"
-                  >
-                    Typora
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="structure"
-                    className="text-xs text-slate-400 data-active:text-white"
-                  >
-                    Structure
-                  </TabsTrigger>
-                </TabsList>
-                <Badge
-                  className="ml-auto border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                  variant="outline"
-                >
-                  XyJax compatible
-                </Badge>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="ml-1 text-slate-400 hover:bg-white/8 hover:text-white"
-                  aria-label="Close code panel"
-                  onClick={() => setCodeOpen(false)}
-                >
-                  <PanelBottomClose />
-                </Button>
-              </div>
-              <TabsContent value="typora" className="min-h-0 overflow-auto p-3">
-                <pre className="font-mono text-[11px] leading-5 text-slate-300">
-                  <code>{typora.text}</code>
-                </pre>
-              </TabsContent>
-              <TabsContent
-                value="structure"
-                className="min-h-0 overflow-auto p-3"
-              >
-                <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
-                  <div className="rounded-lg bg-white/5 p-2">
-                    <p className="text-lg font-semibold text-white">
-                      {doc.nodes.length}
-                    </p>
-                    <p className="text-slate-400">objects</p>
-                  </div>
-                  <div className="rounded-lg bg-white/5 p-2">
-                    <p className="text-lg font-semibold text-white">
-                      {doc.arrows.length}
-                    </p>
-                    <p className="text-slate-400">1-cells</p>
-                  </div>
-                  <div className="rounded-lg bg-white/5 p-2">
-                    <p className="text-lg font-semibold text-white">
-                      {doc.cells.length}
-                    </p>
-                    <p className="text-slate-400">2-cells</p>
-                  </div>
-                </div>
-                <p className="mt-3 text-[11px] leading-5 text-slate-400">
-                  Parallel 2-cells compile to native \\xtwocell. Phantom anchors
-                  and double arrows cover free-standing XY geometry.
-                </p>
-              </TabsContent>
-            </Tabs>
-          </section>
-        )}
       </div>
 
       <output className="sr-only" aria-live="polite" aria-atomic="true">

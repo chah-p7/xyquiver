@@ -345,12 +345,12 @@ export function getArrowGeometry(
   const targetSize = nodeMetrics(target);
   const start = pointOnEllipse(
     source,
-    { x: sourceSize.width / 2 + 7, y: sourceSize.height / 2 + 7 },
+    { x: sourceSize.width / 2 + 9, y: sourceSize.height / 2 + 9 },
     chord,
   );
   const end = pointOnEllipse(
     target,
-    { x: targetSize.width / 2 + 10, y: targetSize.height / 2 + 10 },
+    { x: targetSize.width / 2 + 9, y: targetSize.height / 2 + 9 },
     { x: -chord.x, y: -chord.y },
   );
   const control = {
@@ -457,13 +457,52 @@ export function anchorPoint(
   );
 }
 
+function projectNodeOntoStraightArrow(
+  doc: DiagramDocument,
+  nodeAnchor: CellAnchor,
+  arrowAnchor: CellAnchor,
+): Point | null {
+  if (nodeAnchor.kind !== 'node' || arrowAnchor.kind !== 'arrow') return null;
+  const node = doc.nodes.find((item) => item.id === nodeAnchor.id);
+  const arrow = doc.arrows.find((item) => item.id === arrowAnchor.id);
+  const source = arrow
+    ? doc.nodes.find((item) => item.id === arrow.source)
+    : null;
+  const target = arrow
+    ? doc.nodes.find((item) => item.id === arrow.target)
+    : null;
+  if (!node || !arrow || !source || !target || Math.abs(arrow.curve) > 0.5)
+    return null;
+
+  const chord = { x: target.x - source.x, y: target.y - source.y };
+  const lengthSquared = chord.x * chord.x + chord.y * chord.y;
+  if (lengthSquared < 1) return null;
+  const projection =
+    ((node.x - source.x) * chord.x + (node.y - source.y) * chord.y) /
+    lengthSquared;
+  const requested = arrowAnchor.t ?? 0.5;
+  if (Math.abs(projection - requested) > 0.06) return null;
+  const t = Math.min(0.9, Math.max(0.1, projection));
+  return {
+    x: source.x + chord.x * t,
+    y: source.y + chord.y * t,
+  };
+}
+
 export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
   const sourceAnchor = cellSourceAnchor(cell);
   const targetAnchor = cellTargetAnchor(cell);
   if (!sourceAnchor || !targetAnchor) return null;
-  const rawFrom = anchorPoint(doc, sourceAnchor);
-  const rawTo = anchorPoint(doc, targetAnchor);
+  let rawFrom = anchorPoint(doc, sourceAnchor);
+  let rawTo = anchorPoint(doc, targetAnchor);
   if (!rawFrom || !rawTo) return null;
+  if (sourceAnchor.kind === 'node' && targetAnchor.kind === 'arrow') {
+    rawTo =
+      projectNodeOntoStraightArrow(doc, sourceAnchor, targetAnchor) ?? rawTo;
+  } else if (sourceAnchor.kind === 'arrow' && targetAnchor.kind === 'node') {
+    rawFrom =
+      projectNodeOntoStraightArrow(doc, targetAnchor, sourceAnchor) ?? rawFrom;
+  }
   if (Math.hypot(rawTo.x - rawFrom.x, rawTo.y - rawFrom.y) < 1) return null;
   const rawDirection = normalize({
     x: rawTo.x - rawFrom.x,

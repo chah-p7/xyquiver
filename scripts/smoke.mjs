@@ -3,6 +3,8 @@ import {
   constrainArrowCurve,
   deleteSelections,
   exampleDocuments,
+  getArrowGeometry,
+  getCellGeometry,
   generateSvg,
   generateXyPic,
   isNativeParallelCell,
@@ -16,6 +18,24 @@ if (
   normalizeMathTex('\\[A \\to B\\]') !== 'A \\to B'
 ) {
   throw new Error('latex labels: native math delimiters were not normalized');
+}
+
+const homotopy = exampleDocuments.homotopy;
+const topArrow = getArrowGeometry(homotopy, homotopy.arrows[0]);
+const attachedCell = getCellGeometry(homotopy, {
+  id: 'alignment-check',
+  sourceAnchor: { kind: 'arrow', id: 'a-auto', t: 0.5 },
+  targetAnchor: { kind: 'node', id: 'n-bp' },
+  label: '\\alpha',
+  color: '#5b4bc4',
+});
+if (
+  !topArrow ||
+  Math.abs(topArrow.midpoint.x - 500) > 0.001 ||
+  !attachedCell ||
+  Math.abs(attachedCell.start.x - attachedCell.end.x) > 0.001
+) {
+  throw new Error('alignment: straight arrow and attached 2-cell were skewed');
 }
 
 for (const [id, document] of Object.entries(exampleDocuments)) {
