@@ -99,10 +99,56 @@ if (
 
 const anchoredParallelXy = generateXyPic(parallel, 'snippet').text;
 if (
+  parallel.arrows.length !== 4 ||
+  parallel.arrows.some((arrow) => arrow.id === 'a-rho0') ||
+  !isNativeParallelCell(parallel, parallel.cells[0]) ||
   !anchoredParallelXy.includes("\\hbox{\\rlap{$C'_i=C+d\\rho_2") ||
-  !anchoredParallelXy.includes("=C+d\\rho'_2$}\\phantom{$C$}}")
+  !anchoredParallelXy.includes("=C+d\\rho'_2$}\\phantom{$C$}}") ||
+  !anchoredParallelXy.includes('\\xtwocell')
 ) {
-  throw new Error('Xy-pic: extended node labels were not first-atom anchored');
+  throw new Error(
+    'parallel example: native boundaries or first-glyph anchoring regressed',
+  );
+}
+
+const nativeExample = exampleDocuments.twocell;
+if (
+  nativeExample.arrows.find((arrow) => arrow.id === 'a-g')?.labelSide !==
+  'right'
+) {
+  throw new Error('native 2-cell: lower boundary label G was not below');
+}
+
+const stabilization = exampleDocuments.homotopy;
+const stabilizationCell = stabilization.cells.find(
+  (cell) => cell.id === 'c-stab',
+);
+const stabilizationXy = generateXyPic(stabilization, 'snippet').text;
+if (
+  !stabilizationCell ||
+  stabilizationCell.sourceAnchor?.kind !== 'arrow' ||
+  stabilizationCell.targetAnchor?.kind !== 'node' ||
+  stabilization.arrows.some((arrow) => arrow.stroke === 'double') ||
+  !stabilizationXy.includes('\\ar@{=>}')
+) {
+  throw new Error(
+    'homotopy example: stabilization was not exported as a native attached 2-cell',
+  );
+}
+
+const snake = exampleDocuments.snake;
+const connectingMap = snake.arrows.find((arrow) => arrow.id === 's-delta');
+if (
+  snake.nodes.length !== 24 ||
+  snake.arrows.length !== 30 ||
+  !snake.nodes.some((node) => node.label === '\\ker h') ||
+  !snake.nodes.some((node) => node.label === '\\operatorname{coker} f') ||
+  connectingMap?.source !== 's-ker-h' ||
+  connectingMap.target !== 's-coker-f'
+) {
+  throw new Error(
+    'snake lemma: the standard kernel-cokernel diagram regressed',
+  );
 }
 
 for (const [id, document] of Object.entries(exampleDocuments)) {

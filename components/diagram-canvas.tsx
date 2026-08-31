@@ -127,12 +127,6 @@ type Gesture =
 const additiveModifier = (event: ReactPointerEvent) =>
   event.shiftKey || event.ctrlKey || event.metaKey;
 
-const sameSelection = (
-  selection: Selection | null,
-  kind: Selection['kind'],
-  id: string,
-) => selection?.kind === kind && selection.id === id;
-
 function distance(left: Point, right: Point) {
   return Math.hypot(left.x - right.x, left.y - right.y);
 }
@@ -326,11 +320,13 @@ function InlineLabelEditor({
   selection,
   onCommit,
   onCancel,
+  onPreview,
 }: {
   doc: DiagramDocument;
   selection: Selection;
   onCommit: (selection: Selection, label: string) => void;
   onCancel: () => void;
+  onPreview: (label: string | null) => void;
 }) {
   const language = useUiLanguage();
   const anchor = labelAnchor(doc, selection);
@@ -344,16 +340,21 @@ function InlineLabelEditor({
   }, []);
 
   if (!anchor) return null;
+  const editorY =
+    anchor.point.y > SCENE_HEIGHT - 100
+      ? anchor.point.y - 72
+      : anchor.point.y + 28;
   const finish = (commit: boolean) => {
     if (finished.current) return;
     finished.current = true;
+    onPreview(null);
     if (commit) onCommit(selection, draft);
     else onCancel();
   };
   return (
     <foreignObject
       x={anchor.point.x - 116}
-      y={anchor.point.y - 22}
+      y={clamp(editorY, 8, SCENE_HEIGHT - 52)}
       width="232"
       height="44"
       overflow="visible"
@@ -365,7 +366,10 @@ function InlineLabelEditor({
           aria-label={ui(language, '编辑 LaTeX 标签', 'Edit LaTeX label')}
           className="h-9 w-full rounded-lg border border-[#8a4e75] bg-white/98 px-3 font-mono text-[13px] text-[#242430] shadow-[0_8px_30px_rgb(46_29_44/16%)] outline-none ring-3 ring-[#8a4e75]/12"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            onPreview(event.target.value);
+          }}
           onPointerDown={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onBlur={() => finish(true)}
@@ -595,10 +599,23 @@ export function DiagramCanvas({
   const language = useUiLanguage();
   const svgRef = useRef<SVGSVGElement>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  const [liveLabel, setLiveLabel] = useState<{
+    selection: Selection;
+    label: string;
+  } | null>(null);
   const selectedKeys = useMemo(
     () => new Set(selections.map(selectionKey)),
     [selections],
   );
+  const activeLabelEditorKey = editing
+    ? selectionKey(editing)
+    : selections.length === 1
+      ? selectionKey(selections[0])
+      : '';
+  const effectiveLiveLabel =
+    liveLabel && selectionKey(liveLabel.selection) === activeLabelEditorKey
+      ? liveLabel
+      : null;
   const grid = matrixAxes(doc, true);
   const gridColumns = matrixCellEdges(grid.columns, 0, SCENE_WIDTH);
   const gridRows = matrixCellEdges(grid.rows, 0, SCENE_HEIGHT);
@@ -621,8 +638,9 @@ export function DiagramCanvas({
   };
 
   const previewDoc = useMemo(() => {
+    let preview = doc;
     if (gesture?.kind === 'move') {
-      return {
+      preview = {
         ...doc,
         nodes: doc.nodes.map((node) =>
           gesture.positions[node.id]
@@ -630,9 +648,8 @@ export function DiagramCanvas({
             : node,
         ),
       };
-    }
-    if (gesture?.kind === 'curve') {
-      return {
+    } else if (gesture?.kind === 'curve') {
+      preview = {
         ...doc,
         arrows: doc.arrows.map((arrow) =>
           arrow.id === gesture.arrow
@@ -641,8 +658,29 @@ export function DiagramCanvas({
         ),
       };
     }
-    return doc;
-  }, [doc, gesture]);
+    if (!effectiveLiveLabel) return preview;
+    const { selection, label } = effectiveLiveLabel;
+    return selection.kind === 'node'
+      ? {
+          ...preview,
+          nodes: preview.nodes.map((node) =>
+            node.id === selection.id ? { ...node, label } : node,
+          ),
+        }
+      : selection.kind === 'arrow'
+        ? {
+            ...preview,
+            arrows: preview.arrows.map((arrow) =>
+              arrow.id === selection.id ? { ...arrow, label } : arrow,
+            ),
+          }
+        : {
+            ...preview,
+            cells: preview.cells.map((cell) =>
+              cell.id === selection.id ? { ...cell, label } : cell,
+            ),
+          };
+  }, [doc, gesture, effectiveLiveLabel]);
 
   const beginConnect = (event: ReactPointerEvent, source: CanvasAnchor) => {
     event.preventDefault();
@@ -1191,7 +1229,7 @@ export function DiagramCanvas({
                   pointerEvents="none"
                 />
               )}
-              {arrow.label && !sameSelection(editing, 'arrow', arrow.id) && (
+              {arrow.label && (
                 <MathLabel
                   tex={arrow.label}
                   x={labelX}
@@ -1263,20 +1301,18 @@ export function DiagramCanvas({
                 head={resolvedCellHead(cell)}
                 stroke={resolvedCellStroke(cell)}
               />
-              {!sameSelection(editing, 'cell', cell.id) && (
-                <MathLabel
-                  tex={cell.label}
-                  x={geometry.midpoint.x + geometry.normal.x * 20}
-                  y={geometry.midpoint.y + geometry.normal.y * 20}
-                  width={Math.min(
-                    220,
-                    Math.max(52, displayTex(cell.label).length * 11 + 26),
-                  )}
-                  color="#273244"
-                  size={17}
-                  paper
-                />
-              )}
+              <MathLabel
+                tex={cell.label}
+                x={geometry.midpoint.x + geometry.normal.x * 20}
+                y={geometry.midpoint.y + geometry.normal.y * 20}
+                width={Math.min(
+                  220,
+                  Math.max(52, displayTex(cell.label).length * 11 + 26),
+                )}
+                color="#273244"
+                size={17}
+                paper
+              />
             </g>
           );
         })}
@@ -1404,7 +1440,7 @@ export function DiagramCanvas({
                     pointerEvents="none"
                   />
                 </>
-              ) : !sameSelection(editing, 'node', node.id) ? (
+              ) : (
                 <MathLabel
                   tex={node.label}
                   x={0}
@@ -1415,7 +1451,7 @@ export function DiagramCanvas({
                   size={22}
                   anchor="first"
                 />
-              ) : null}
+              )}
               {(selected || pending) && (
                 <>
                   <circle
@@ -1471,6 +1507,8 @@ export function DiagramCanvas({
             (item) => item.id === selections[0].id,
           );
           if (!node) return null;
+          const committedNode =
+            doc.nodes.find((item) => item.id === node.id) ?? node;
           const width = 330;
           const height = 76;
           const position = floatingPanelPosition(node, width, height);
@@ -1489,10 +1527,21 @@ export function DiagramCanvas({
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <FloatingNodeEditor
-                  key={`${node.id}:${node.label}`}
-                  node={node}
-                  onCommitLabel={(label) =>
-                    onCommitLabel({ kind: 'node', id: node.id }, label)
+                  key={node.id}
+                  node={committedNode}
+                  onCommitLabel={(label) => {
+                    setLiveLabel(null);
+                    onCommitLabel({ kind: 'node', id: node.id }, label);
+                  }}
+                  onPreviewLabel={(label) =>
+                    setLiveLabel(
+                      label === null
+                        ? null
+                        : {
+                            selection: { kind: 'node', id: node.id },
+                            label,
+                          },
+                    )
                   }
                   onPatch={(patch) => onPatchNode(node.id, patch)}
                 />
@@ -1558,6 +1607,8 @@ export function DiagramCanvas({
           );
           const geometry = arrow ? getArrowGeometry(previewDoc, arrow) : null;
           if (!arrow || !geometry) return null;
+          const committedArrow =
+            doc.arrows.find((item) => item.id === arrow.id) ?? arrow;
           const width = 330;
           const height = 122;
           const position = floatingPanelPosition(
@@ -1581,12 +1632,23 @@ export function DiagramCanvas({
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <FloatingCellEditor
-                  key={`${arrow.id}:${arrow.label}`}
-                  item={{ kind: 'arrow', value: arrow }}
+                  key={arrow.id}
+                  item={{ kind: 'arrow', value: committedArrow }}
                   connectionMode={connectionMode}
                   onChooseLevel={onChooseConnectionMode}
-                  onCommitLabel={(label) =>
-                    onCommitLabel({ kind: 'arrow', id: arrow.id }, label)
+                  onCommitLabel={(label) => {
+                    setLiveLabel(null);
+                    onCommitLabel({ kind: 'arrow', id: arrow.id }, label);
+                  }}
+                  onPreviewLabel={(label) =>
+                    setLiveLabel(
+                      label === null
+                        ? null
+                        : {
+                            selection: { kind: 'arrow', id: arrow.id },
+                            label,
+                          },
+                    )
                   }
                   onPatchArrow={(patch) => onPatchArrow(arrow.id, patch)}
                 />
@@ -1606,6 +1668,8 @@ export function DiagramCanvas({
           );
           const geometry = cell ? getCellGeometry(previewDoc, cell) : null;
           if (!cell || !geometry) return null;
+          const committedCell =
+            doc.cells.find((item) => item.id === cell.id) ?? cell;
           const width = 330;
           const height = 122;
           const position = floatingPanelPosition(
@@ -1628,12 +1692,23 @@ export function DiagramCanvas({
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <FloatingCellEditor
-                  key={`${cell.id}:${cell.label}`}
-                  item={{ kind: 'cell', value: cell }}
+                  key={cell.id}
+                  item={{ kind: 'cell', value: committedCell }}
                   connectionMode={connectionMode}
                   onChooseLevel={onChooseConnectionMode}
-                  onCommitLabel={(label) =>
-                    onCommitLabel({ kind: 'cell', id: cell.id }, label)
+                  onCommitLabel={(label) => {
+                    setLiveLabel(null);
+                    onCommitLabel({ kind: 'cell', id: cell.id }, label);
+                  }}
+                  onPreviewLabel={(label) =>
+                    setLiveLabel(
+                      label === null
+                        ? null
+                        : {
+                            selection: { kind: 'cell', id: cell.id },
+                            label,
+                          },
+                    )
                   }
                   onPatchCell={(patch) => onPatchCell(cell.id, patch)}
                 />
@@ -1710,6 +1785,9 @@ export function DiagramCanvas({
           selection={editing}
           onCommit={onCommitLabel}
           onCancel={onCancelLabelEdit}
+          onPreview={(label) =>
+            setLiveLabel(label === null ? null : { selection: editing, label })
+          }
         />
       )}
     </svg>

@@ -45,6 +45,7 @@ export function FloatingCellEditor({
   connectionMode,
   onChooseLevel,
   onCommitLabel,
+  onPreviewLabel,
   onPatchArrow,
   onPatchCell,
 }: {
@@ -54,6 +55,7 @@ export function FloatingCellEditor({
   connectionMode: DrawLevel;
   onChooseLevel: (level: DrawLevel) => void;
   onCommitLabel: (label: string) => void;
+  onPreviewLabel: (label: string | null) => void;
   onPatchArrow?: (patch: Partial<DiagramArrow>) => void;
   onPatchCell?: (patch: Partial<DiagramTwoCell>) => void;
 }) {
@@ -65,8 +67,10 @@ export function FloatingCellEditor({
   const updateDraft = (next: string) => {
     draftRef.current = next;
     setDraft(next);
+    onPreviewLabel(next);
   };
   const commit = (next = draftRef.current) => {
+    onPreviewLabel(null);
     if (next !== item.value.label) onCommitLabel(next);
   };
   const chooseFace = (nextFace: LabelFace) => {
@@ -119,7 +123,9 @@ export function FloatingCellEditor({
                 event.currentTarget.blur();
               } else if (event.key === 'Escape') {
                 skipBlurCommit.current = true;
-                updateDraft(item.value.label);
+                draftRef.current = item.value.label;
+                setDraft(item.value.label);
+                onPreviewLabel(null);
                 event.currentTarget.blur();
               }
             }}

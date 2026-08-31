@@ -130,6 +130,51 @@ function addBackground(svg: SVGSVGElement) {
   svg.insertBefore(rect, svg.firstChild);
 }
 
+function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 360) {
+  const current = (svg.getAttribute('viewBox') ?? '')
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  if (
+    current.length !== 4 ||
+    current.some((value) => !Number.isFinite(value))
+  ) {
+    return;
+  }
+
+  const host = document.createElement('div');
+  host.style.cssText =
+    'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none';
+  host.appendChild(svg);
+  document.body.appendChild(host);
+  try {
+    const graphics =
+      svg.querySelector<SVGGraphicsElement>('g[data-mml-node="math"]') ??
+      svg.querySelector<SVGGraphicsElement>('g');
+    const bounds = graphics?.getBBox();
+    if (
+      !bounds ||
+      ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
+    ) {
+      return;
+    }
+    const [x, y, width, height] = current;
+    const left = Math.min(x, bounds.x - padding);
+    const top = Math.min(y, bounds.y - padding);
+    const right = Math.max(x + width, bounds.x + bounds.width + padding);
+    const bottom = Math.max(y + height, bounds.y + bounds.height + padding);
+    svg.setAttribute(
+      'viewBox',
+      `${left} ${top} ${right - left} ${bottom - top}`,
+    );
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  } catch {
+    // Keep MathJax's original viewBox if this browser cannot measure SVG text.
+  } finally {
+    host.remove();
+  }
+}
+
 export async function renderXyPicSvg(
   source: string,
   options: { background?: boolean; title?: string } = {},
@@ -146,6 +191,7 @@ export async function renderXyPicSvg(
   svg.setAttribute('xmlns', SVG_NAMESPACE);
   svg.setAttribute('role', 'img');
   svg.setAttribute('color', '#111827');
+  fitViewBoxToRenderedContent(svg);
   if (options.background) addBackground(svg);
   if (options.title) {
     const title = document.createElementNS(SVG_NAMESPACE, 'title');

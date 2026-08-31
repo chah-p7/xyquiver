@@ -36,10 +36,12 @@ function applyLabelFace(value: string, face: LabelFace) {
 export function FloatingNodeEditor({
   node,
   onCommitLabel,
+  onPreviewLabel,
   onPatch,
 }: {
   node: DiagramNode;
   onCommitLabel: (label: string) => void;
+  onPreviewLabel: (label: string | null) => void;
   onPatch: (patch: Partial<DiagramNode>) => void;
 }) {
   const language = useUiLanguage();
@@ -50,8 +52,10 @@ export function FloatingNodeEditor({
   const updateDraft = (next: string) => {
     draftRef.current = next;
     setDraft(next);
+    onPreviewLabel(next);
   };
   const commit = (next = draftRef.current) => {
+    onPreviewLabel(null);
     if (next !== node.label) onCommitLabel(next);
   };
   const chooseFace = (nextFace: LabelFace) => {
@@ -102,7 +106,9 @@ export function FloatingNodeEditor({
               event.currentTarget.blur();
             } else if (event.key === 'Escape') {
               skipBlurCommit.current = true;
-              updateDraft(node.label);
+              draftRef.current = node.label;
+              setDraft(node.label);
+              onPreviewLabel(null);
               event.currentTarget.blur();
             }
           }}
