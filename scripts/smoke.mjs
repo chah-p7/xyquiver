@@ -1,4 +1,5 @@
 import {
+  arrowGridAnchors,
   cellCreationConflict,
   constrainArrowCurve,
   deleteSelections,
@@ -59,7 +60,7 @@ const homotopy = exampleDocuments.homotopy;
 const topArrow = getArrowGeometry(homotopy, homotopy.arrows[0]);
 const attachedCell = getCellGeometry(homotopy, {
   id: 'alignment-check',
-  sourceAnchor: { kind: 'arrow', id: 'a-auto', t: 0.5 },
+  sourceAnchor: { kind: 'arrow', id: 'a-auto', t: 0.64 },
   targetAnchor: { kind: 'node', id: 'n-bp' },
   label: '\\alpha',
   color: '#5b4bc4',
@@ -68,9 +69,22 @@ if (
   !topArrow ||
   Math.abs(topArrow.midpoint.x - 500) > 0.001 ||
   !attachedCell ||
-  Math.abs(attachedCell.start.x - attachedCell.end.x) > 0.001
+  attachedCell.start.x <= attachedCell.end.x
 ) {
-  throw new Error('alignment: straight arrow and attached 2-cell were skewed');
+  throw new Error(
+    'homotopy: the attached 2-cell did not slope down-left from the top arrow',
+  );
+}
+
+const topGridAnchors = arrowGridAnchors(homotopy, homotopy.arrows[0]);
+if (
+  ![325, 500, 675].every((x) =>
+    topGridAnchors.some((anchor) => anchor.x === x && anchor.y === 105),
+  )
+) {
+  throw new Error(
+    'arrow anchors: long arrows missed traversed matrix-centre anchors',
+  );
 }
 
 const parallel = exampleDocuments.parallel;
@@ -81,19 +95,52 @@ const incomingEndpoints = parallel.arrows
   .filter((arrow) => arrow.target === longTarget.id)
   .map((arrow) => getArrowGeometry(parallel, arrow)?.end)
   .filter(Boolean);
+const outgoingEndpoints = parallel.arrows
+  .filter((arrow) => arrow.source === longTarget.id)
+  .map((arrow) => getArrowGeometry(parallel, arrow)?.start)
+  .filter(Boolean);
 if (
   firstNodeTexAtom(longTarget.label) !== 'C' ||
   targetMetrics.width !== nodeMetrics(parallel.nodes[0]).width ||
   nodeLabelWidth(longTarget) <= targetMetrics.width ||
-  incomingEndpoints.length < 3 ||
+  incomingEndpoints.length !== 2 ||
+  outgoingEndpoints.length !== 2 ||
   new Set(
     incomingEndpoints.map(
       (point) => `${Math.round(point.x)}:${Math.round(point.y)}`,
     ),
-  ).size !== 1
+  ).size !== 1 ||
+  new Set(
+    outgoingEndpoints.map(
+      (point) => `${Math.round(point.x)}:${Math.round(point.y)}`,
+    ),
+  ).size !== 1 ||
+  incomingEndpoints[0].x >= longTarget.x ||
+  outgoingEndpoints[0].x >= longTarget.x
 ) {
   throw new Error(
-    'node anchoring: the first TeX atom was not treated like a single-character vertex',
+    'label clearance: arrows did not stop at the nearest glyph edge',
+  );
+}
+
+const rightApproach = JSON.parse(JSON.stringify(parallel));
+rightApproach.nodes.find((node) => node.id === 'n-c').x = 920;
+const fromRight = getArrowGeometry(
+  rightApproach,
+  rightApproach.arrows.find((arrow) => arrow.id === 'a-rho2'),
+);
+const toRight = getArrowGeometry(
+  rightApproach,
+  rightApproach.arrows.find((arrow) => arrow.id === 'a-rho1'),
+);
+if (
+  !fromRight ||
+  !toRight ||
+  fromRight.end.x <= longTarget.x + targetMetrics.width / 2 ||
+  toRight.start.x <= longTarget.x + targetMetrics.width / 2
+) {
+  throw new Error(
+    'label clearance: right-side arrows ignored the nearest final glyph',
   );
 }
 
@@ -101,10 +148,13 @@ const anchoredParallelXy = generateXyPic(parallel, 'snippet').text;
 if (
   parallel.arrows.length !== 4 ||
   parallel.arrows.some((arrow) => arrow.id === 'a-rho0') ||
+  parallel.arrows.find((arrow) => arrow.id === 'a-rho1')?.source !== 'n-cp' ||
+  parallel.arrows.find((arrow) => arrow.id === 'a-rho1p')?.source !== 'n-cp' ||
   !isNativeParallelCell(parallel, parallel.cells[0]) ||
   !anchoredParallelXy.includes("\\hbox{\\rlap{$C'_i=C+d\\rho_2") ||
   !anchoredParallelXy.includes("=C+d\\rho'_2$}\\phantom{$C$}}") ||
-  !anchoredParallelXy.includes('\\xtwocell')
+  !anchoredParallelXy.includes('\\xtwocell') ||
+  !anchoredParallelXy.includes("^{\\rho_1}_{\\rho'_1}")
 ) {
   throw new Error(
     'parallel example: native boundaries or first-glyph anchoring regressed',

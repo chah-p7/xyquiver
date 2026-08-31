@@ -691,7 +691,7 @@ function ExportDialog({
                 )}
               />
             </div>
-            <div className="grid h-[35vh] place-items-center overflow-hidden rounded-xl border bg-canvas-grid p-4 [&_svg]:max-h-full [&_svg]:max-w-full">
+            <div className="grid h-[35vh] place-items-center overflow-hidden rounded-xl border bg-canvas-grid p-4 [&_svg]:h-full [&_svg]:w-full">
               {svgLoading ? (
                 <p className="text-sm text-muted-foreground">
                   {ui(
@@ -1102,6 +1102,165 @@ export function XyQuiverShell() {
       }));
     },
     [commit],
+  );
+
+  const changeSelectionLevel = useCallback(
+    (
+      item: Extract<Selection, { kind: 'arrow' | 'cell' }>,
+      level: Exclude<ConnectionMode, 'auto'>,
+      label: string,
+    ) => {
+      if (
+        (item.kind === 'arrow' && level === 'arrow') ||
+        (item.kind === 'cell' && level === 'cell')
+      ) {
+        return;
+      }
+
+      if (item.kind === 'arrow') {
+        const arrow = doc.arrows.find((candidate) => candidate.id === item.id);
+        if (!arrow) return;
+        const referenced = doc.cells.some((cell) => {
+          const source = cellSourceAnchor(cell);
+          const target = cellTargetAnchor(cell);
+          const paths = cellBoundaryPaths(cell);
+          return (
+            (source?.kind === 'arrow' && source.id === arrow.id) ||
+            (target?.kind === 'arrow' && target.id === arrow.id) ||
+            paths.source.includes(arrow.id) ||
+            paths.target.includes(arrow.id)
+          );
+        });
+        if (referenced) {
+          setStatus(
+            ui(
+              language,
+              '这条一胞腔正被另一个二胞腔引用，需先解除该附着关系。',
+              'This 1-cell is referenced by another 2-cell; detach it first.',
+            ),
+          );
+          return;
+        }
+        const nextId = makeId('cell');
+        commit((current) => ({
+          ...current,
+          arrows: current.arrows.filter(
+            (candidate) => candidate.id !== arrow.id,
+          ),
+          cells: [
+            ...current.cells,
+            {
+              id: nextId,
+              sourceAnchor: { kind: 'node', id: arrow.source },
+              targetAnchor: { kind: 'node', id: arrow.target },
+              sourcePath: [],
+              targetPath: [],
+              label,
+              color: arrow.color,
+              head: arrow.head === 'none' ? 'none' : 'arrow',
+              stroke:
+                arrow.stroke === 'dashed' || arrow.stroke === 'dotted'
+                  ? arrow.stroke
+                  : 'solid',
+            },
+          ],
+        }));
+        setSelections([{ kind: 'cell', id: nextId }]);
+        setEditing(null);
+        setStatus(
+          ui(
+            language,
+            '已将所选一胞腔转换为二胞腔。',
+            'Converted the selected 1-cell to a 2-cell.',
+          ),
+        );
+        return;
+      }
+
+      const cell = doc.cells.find((candidate) => candidate.id === item.id);
+      if (!cell) return;
+      const sourceAnchor = cellSourceAnchor(cell);
+      const targetAnchor = cellTargetAnchor(cell);
+      let source: NodeId | null = null;
+      let target: NodeId | null = null;
+      if (sourceAnchor?.kind === 'node' && targetAnchor?.kind === 'node') {
+        source = sourceAnchor.id;
+        target = targetAnchor.id;
+      } else if (
+        sourceAnchor?.kind === 'arrow' &&
+        targetAnchor?.kind === 'arrow'
+      ) {
+        const sourceBoundary = doc.arrows.find(
+          (arrow) => arrow.id === sourceAnchor.id,
+        );
+        const targetBoundary = doc.arrows.find(
+          (arrow) => arrow.id === targetAnchor.id,
+        );
+        if (
+          sourceBoundary &&
+          targetBoundary &&
+          areParallel(sourceBoundary, targetBoundary)
+        ) {
+          source = sourceBoundary.source;
+          target = sourceBoundary.target;
+        }
+      }
+      if (!source || !target || source === target) {
+        setStatus(
+          ui(
+            language,
+            '这个附着二胞腔没有唯一的一胞腔端点，无法无损转换。',
+            'This attached 2-cell has no unique pair of 1-cell endpoints.',
+          ),
+        );
+        return;
+      }
+      if (cell.head === 'reverse') [source, target] = [target, source];
+      const nextId = makeId('arrow');
+      commit((current) => {
+        const existing = current.arrows.filter(
+          (arrow) => arrow.source === source && arrow.target === target,
+        );
+        let arrows = current.arrows;
+        if (existing.length === 1 && Math.abs(existing[0].curve) < 8) {
+          arrows = arrows.map((arrow) =>
+            arrow.id === existing[0].id ? { ...arrow, curve: 58 } : arrow,
+          );
+        }
+        return {
+          ...current,
+          arrows: [
+            ...arrows,
+            {
+              id: nextId,
+              source: source!,
+              target: target!,
+              label,
+              curve: existing.length === 0 ? 0 : -58 - existing.length * 34,
+              labelSide: existing.length === 0 ? 'left' : 'right',
+              stroke:
+                cell.stroke === 'dashed' || cell.stroke === 'dotted'
+                  ? cell.stroke
+                  : 'solid',
+              head: cell.head === 'none' ? 'none' : 'arrow',
+              tail: 'none',
+              color: cell.color,
+            },
+          ],
+          cells: current.cells.filter((candidate) => candidate.id !== cell.id),
+        };
+      });
+      setSelections([{ kind: 'arrow', id: nextId }]);
+      setEditing(null);
+      setStatus(
+        ui(
+          language,
+          '已将所选二胞腔转换为一胞腔。',
+          'Converted the selected 2-cell to a 1-cell.',
+        ),
+      );
+    },
+    [commit, doc, language],
   );
 
   const addNode = useCallback(
@@ -1706,32 +1865,6 @@ export function XyQuiverShell() {
     );
   };
 
-  const chooseConnectionMode = (mode: ConnectionMode) => {
-    setConnectionMode(mode);
-    setTool('select');
-    setPendingNode(null);
-    setPendingArrow(null);
-    setStatus(
-      mode === 'auto'
-        ? ui(
-            language,
-            '自动层级：根据端点维度选择一胞腔或二胞腔。',
-            'Automatic level: endpoint dimensions choose 1-cell or 2-cell.',
-          )
-        : mode === 'arrow'
-          ? ui(
-              language,
-              '强制层级 1：在对象或网格锚点之间拖动。',
-              'Level 1 override: drag between object or grid anchors.',
-            )
-          : ui(
-              language,
-              '强制层级 2：在任意两个对象或箭头锚点之间拖动。',
-              'Level 2 override: drag between any two object or arrow anchors.',
-            ),
-    );
-  };
-
   return (
     <main className="flex h-dvh min-h-[560px] flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card/95 px-3 shadow-[0_1px_8px_rgb(36_31_27/4%)] backdrop-blur">
@@ -1935,7 +2068,7 @@ export function XyQuiverShell() {
             onPatchNode={patchNode}
             onPatchArrow={patchArrow}
             onPatchCell={patchCell}
-            onChooseConnectionMode={chooseConnectionMode}
+            onChangeSelectionLevel={changeSelectionLevel}
             onBeginLabelEdit={(item) => {
               setSelections([item]);
               setEditing(item);

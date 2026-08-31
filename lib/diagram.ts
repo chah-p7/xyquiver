@@ -29,6 +29,8 @@ export interface DiagramArrow {
   label: string;
   curve: number;
   labelSide: LabelSide;
+  /** Optional position of the label along the arrow, from source to target. */
+  labelPosition?: number;
   stroke: ArrowStroke;
   head: ArrowHead;
   tail: ArrowTail;
@@ -387,15 +389,40 @@ function normalize(vector: Point): Point {
   return { x: vector.x / length, y: vector.y / length };
 }
 
-function pointOnEllipse(center: Point, radii: Point, direction: Point): Point {
-  const unit = normalize(direction);
-  const scale =
-    1 /
-    Math.sqrt(
-      (unit.x * unit.x) / (radii.x * radii.x) +
-        (unit.y * unit.y) / (radii.y * radii.y),
-    );
-  return { x: center.x + unit.x * scale, y: center.y + unit.y * scale };
+function pointOutsideNodeLabel(
+  node: DiagramNode,
+  direction: Point,
+  gap: number,
+): Point {
+  const size = nodeMetrics(node);
+  const labelWidth = nodeLabelWidth(node);
+  const bounds = node.ghost
+    ? {
+        left: -size.width / 2,
+        right: size.width / 2,
+        top: -size.height / 2,
+        bottom: size.height / 2,
+      }
+    : {
+        // Labels are first-glyph anchored at the grid centre and grow right.
+        left: -size.width / 2,
+        right: labelWidth - size.width / 2,
+        top: -size.height / 2,
+        bottom: size.height / 2,
+      };
+  const horizontalExit =
+    Math.abs(direction.x) < 1e-6
+      ? Number.POSITIVE_INFINITY
+      : (direction.x > 0 ? bounds.right : bounds.left) / direction.x;
+  const verticalExit =
+    Math.abs(direction.y) < 1e-6
+      ? Number.POSITIVE_INFINITY
+      : (direction.y > 0 ? bounds.bottom : bounds.top) / direction.y;
+  const exit = Math.min(horizontalExit, verticalExit) + gap;
+  return {
+    x: node.x + direction.x * exit,
+    y: node.y + direction.y * exit,
+  };
 }
 
 export function quadraticPoint(
@@ -433,18 +460,8 @@ export function getArrowGeometry(
 
   const chord = normalize({ x: target.x - source.x, y: target.y - source.y });
   const normal = { x: chord.y, y: -chord.x };
-  const sourceSize = nodeMetrics(source);
-  const targetSize = nodeMetrics(target);
-  const start = pointOnEllipse(
-    source,
-    { x: sourceSize.width / 2 + 9, y: sourceSize.height / 2 + 9 },
-    chord,
-  );
-  const end = pointOnEllipse(
-    target,
-    { x: targetSize.width / 2 + 9, y: targetSize.height / 2 + 9 },
-    { x: -chord.x, y: -chord.y },
-  );
+  const start = pointOutsideNodeLabel(source, chord, 9);
+  const end = pointOutsideNodeLabel(target, { x: -chord.x, y: -chord.y }, 9);
   const control = {
     x: (start.x + end.x) / 2 + normal.x * arrow.curve,
     y: (start.y + end.y) / 2 + normal.y * arrow.curve,
@@ -461,6 +478,79 @@ export function getArrowGeometry(
     normal: middleNormal,
     path: `M ${round(start.x)} ${round(start.y)} Q ${round(control.x)} ${round(control.y)} ${round(end.x)} ${round(end.y)}`,
   };
+}
+
+export function arrowPointAt(
+  geometry: ArrowGeometry,
+  position = 0.5,
+): Pick<ArrowGeometry, 'midpoint' | 'tangent' | 'normal'> {
+  const t = Math.min(0.95, Math.max(0.05, position));
+  const midpoint = quadraticPoint(
+    geometry.start,
+    geometry.control,
+    geometry.end,
+    t,
+  );
+  const tangent = quadraticTangent(
+    geometry.start,
+    geometry.control,
+    geometry.end,
+    t,
+  );
+  return {
+    midpoint,
+    tangent,
+    normal: { x: tangent.y, y: -tangent.x },
+  };
+}
+
+export interface ArrowGridAnchor extends Point {
+  t: number;
+}
+
+/** Grid-centre attachment points lying on the interior of an arrow. */
+export function arrowGridAnchors(
+  doc: DiagramDocument,
+  arrow: DiagramArrow,
+  tolerance = 10,
+): ArrowGridAnchor[] {
+  const geometry = getArrowGeometry(doc, arrow);
+  if (!geometry) return [];
+  const axes = matrixAxes(doc, true);
+  const candidates: ArrowGridAnchor[] = [];
+  for (const x of axes.columns) {
+    for (const y of axes.rows) {
+      if (doc.nodes.some((node) => node.x === x && node.y === y)) continue;
+      let best = {
+        distance: Number.POSITIVE_INFINITY,
+        t: 0.5,
+        point: geometry.midpoint,
+      };
+      for (let step = 6; step <= 114; step += 1) {
+        const t = step / 120;
+        const point = quadraticPoint(
+          geometry.start,
+          geometry.control,
+          geometry.end,
+          t,
+        );
+        const candidateDistance = Math.hypot(point.x - x, point.y - y);
+        if (candidateDistance < best.distance) {
+          best = { distance: candidateDistance, t, point };
+        }
+      }
+      if (best.distance > tolerance || best.t < 0.08 || best.t > 0.92) {
+        continue;
+      }
+      if (
+        candidates.some((candidate) => Math.abs(candidate.t - best.t) < 0.035)
+      ) {
+        continue;
+      }
+      candidates.push({ x, y, t: best.t });
+    }
+  }
+  return candidates.sort((left, right) => left.t - right.t);
 }
 
 export function cellSourceAnchor(cell: DiagramTwoCell): CellAnchor | null {
@@ -605,22 +695,16 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
   if (sourceAnchor.kind === 'node') {
     const node = doc.nodes.find((item) => item.id === sourceAnchor.id);
     if (node) {
-      const size = nodeMetrics(node);
-      from = pointOnEllipse(
-        node,
-        { x: size.width / 2 + 10, y: size.height / 2 + 10 },
-        rawDirection,
-      );
+      from = pointOutsideNodeLabel(node, rawDirection, 10);
     }
   }
   if (targetAnchor.kind === 'node') {
     const node = doc.nodes.find((item) => item.id === targetAnchor.id);
     if (node) {
-      const size = nodeMetrics(node);
-      to = pointOnEllipse(
+      to = pointOutsideNodeLabel(
         node,
-        { x: size.width / 2 + 10, y: size.height / 2 + 10 },
         { x: -rawDirection.x, y: -rawDirection.y },
+        10,
       );
     }
   }
@@ -1102,9 +1186,10 @@ export function generateSvg(
           : `<path d="${geometry.path}" ${common}${tail}${marker}/>`;
       if (!arrow.label) return paths;
       const side = arrow.labelSide === 'left' ? 1 : -1;
+      const labelGeometry = arrowPointAt(geometry, arrow.labelPosition ?? 0.5);
       const label = {
-        x: geometry.midpoint.x + geometry.normal.x * 23 * side,
-        y: geometry.midpoint.y + geometry.normal.y * 23 * side,
+        x: labelGeometry.midpoint.x + labelGeometry.normal.x * 23 * side,
+        y: labelGeometry.midpoint.y + labelGeometry.normal.y * 23 * side,
       };
       return `${paths}<text x="${round(label.x)}" y="${round(label.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(arrow.label))}</text>`;
     })
@@ -1324,7 +1409,12 @@ export function generateXyPic(
         `2-cell ${cell.label || cell.id} uses styled boundary arrows; XyJax may simplify them.`,
       );
     }
-    const sourceIsUpper = sourceArrow.curve >= targetArrow.curve;
+    const sourceGeometry = getArrowGeometry(doc, sourceArrow);
+    const targetGeometry = getArrowGeometry(doc, targetArrow);
+    const sourceIsUpper =
+      sourceGeometry && targetGeometry
+        ? sourceGeometry.midpoint.y <= targetGeometry.midpoint.y
+        : sourceArrow.curve >= targetArrow.curve;
     const upper = sourceIsUpper ? sourceArrow : targetArrow;
     const lower = sourceIsUpper ? targetArrow : sourceArrow;
     const label = safeTex(cell.label);
@@ -1626,23 +1716,30 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     format: 'xyquiver',
     version: 2,
     title: 'Parallel deformation arrows',
-    grid: { columns: [200, 350, 500], rows: [170, 310, 450] },
+    grid: {
+      columns: [160, 320, 440, 560, 720, 880],
+      rows: [130, 310, 490],
+    },
     nodes: [
-      node('n-c', 'C', 200, 310),
-      node('n-cp', "C'_i=C+d\\rho_2=C+d\\rho'_2", 500, 310),
+      node('n-c', 'C', 320, 310),
+      node('n-cp', "C'_i=C+d\\rho_2=C+d\\rho'_2", 560, 310),
     ],
     arrows: [
-      arrow('a-rho2', 'n-c', 'n-cp', '\\rho_2', 128),
-      arrow('a-rho1', 'n-c', 'n-cp', '\\rho_1', 52),
-      arrow('a-rho1p', 'n-c', 'n-cp', "\\rho'_1", -52, {
+      arrow('a-rho2', 'n-c', 'n-cp', '\\rho_2', 180),
+      arrow('a-rho1', 'n-cp', 'n-c', '\\rho_1', -82, {
+        labelPosition: 0.25,
+        labelSide: 'left',
+      }),
+      arrow('a-rho1p', 'n-cp', 'n-c', "\\rho'_1", 82, {
+        labelPosition: 0.75,
         labelSide: 'right',
       }),
       arrow(
         'a-rho2p',
         'n-c',
         'n-cp',
-        "\\rho'_2=\\rho_2+d\\rho_1=\\rho_2+d\\rho'_1",
-        -128,
+        "\\substack{\\rho'_2=\\rho_2+d\\rho_1\\\\=\\rho_2+d\\rho'_1}",
+        -180,
         { labelSide: 'right' },
       ),
     ],
@@ -1671,7 +1768,13 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
       node('n-omega', '\\Omega^{p+2}_{cl}', 500, 570),
     ],
     arrows: [
-      arrow('a-auto', 'n-xl', 'n-xr', 'automorphism\\;\\simeq', 0),
+      arrow(
+        'a-auto',
+        'n-xl',
+        'n-xr',
+        '\\overset{\\mathrm{automorphism}}{\\simeq}',
+        0,
+      ),
       arrow('a-left-b', 'n-xl', 'n-bp', '\\nabla', 0),
       arrow('a-right-b', 'n-xr', 'n-bp', '\\nabla', 0, { labelSide: 'right' }),
       arrow('a-left-o', 'n-xl', 'n-omega', 'F', -90),
@@ -1683,11 +1786,12 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     cells: [
       {
         id: 'c-stab',
-        sourceAnchor: { kind: 'arrow', id: 'a-auto', t: 0.58 },
+        sourceAnchor: { kind: 'arrow', id: 'a-auto', t: 0.64 },
         targetAnchor: { kind: 'node', id: 'n-bp' },
         sourcePath: [],
         targetPath: [],
-        label: '\\substack{\\text{homotopy}\\\\\\text{stabilization}}',
+        label:
+          '\\substack{\\scriptscriptstyle\\mathrm{homotopy}\\\\\\scriptscriptstyle\\mathrm{stabilization}}',
         color: '#273244',
         head: 'arrow',
         stroke: 'solid',
@@ -1835,6 +1939,10 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       typeof item.target !== 'string' ||
       typeof item.label !== 'string' ||
       !Number.isFinite(item.curve) ||
+      (item.labelPosition !== undefined &&
+        (!Number.isFinite(item.labelPosition) ||
+          (item.labelPosition as number) < 0.05 ||
+          (item.labelPosition as number) > 0.95)) ||
       !['left', 'right'].includes(item.labelSide as string) ||
       !['solid', 'dashed', 'dotted', 'double'].includes(
         item.stroke as string,
@@ -1852,6 +1960,9 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       label: item.label,
       curve: item.curve as number,
       labelSide: item.labelSide as LabelSide,
+      ...(item.labelPosition === undefined
+        ? {}
+        : { labelPosition: item.labelPosition as number }),
       stroke: item.stroke as ArrowStroke,
       head: item.head as ArrowHead,
       tail: item.tail as ArrowTail,

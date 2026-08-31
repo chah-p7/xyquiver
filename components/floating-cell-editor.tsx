@@ -42,8 +42,7 @@ function applyLabelFace(value: string, face: LabelFace) {
 
 export function FloatingCellEditor({
   item,
-  connectionMode,
-  onChooseLevel,
+  onChangeLevel,
   onCommitLabel,
   onPreviewLabel,
   onPatchArrow,
@@ -52,8 +51,7 @@ export function FloatingCellEditor({
   item:
     | { kind: 'arrow'; value: DiagramArrow }
     | { kind: 'cell'; value: DiagramTwoCell };
-  connectionMode: DrawLevel;
-  onChooseLevel: (level: DrawLevel) => void;
+  onChangeLevel: (level: Exclude<DrawLevel, 'auto'>, label: string) => void;
   onCommitLabel: (label: string) => void;
   onPreviewLabel: (label: string | null) => void;
   onPatchArrow?: (patch: Partial<DiagramArrow>) => void;
@@ -209,62 +207,63 @@ export function FloatingCellEditor({
       <div className="flex items-center gap-1.5 rounded-xl border border-[#d9ced6] bg-[#fbfaf7]/97 p-1.5 shadow-[0_8px_24px_rgb(46_29_44/12%)] backdrop-blur">
         <div
           className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/65 p-0.5"
-          aria-label={ui(language, '下一条连线的层级', 'Next connection level')}
+          aria-label={ui(
+            language,
+            '所选连线的层级',
+            'Selected connection level',
+          )}
         >
           <Button
             type="button"
             size="xs"
-            variant={connectionMode === 'auto' ? 'secondary' : 'ghost'}
+            variant={item.kind === 'arrow' ? 'secondary' : 'ghost'}
             className={
-              connectionMode === 'auto'
+              item.kind === 'arrow'
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : undefined
             }
-            aria-pressed={connectionMode === 'auto'}
+            aria-pressed={item.kind === 'arrow'}
             title={ui(
               language,
-              '根据端点自动判断下一条连线的层级',
-              'Infer the next cell level from its endpoints',
+              '将当前所选内容转换为一胞腔',
+              'Convert the selected connection to a 1-cell',
             )}
-            onClick={() => onChooseLevel('auto')}
-          >
-            {ui(language, '自动', 'Auto')}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant={connectionMode === 'arrow' ? 'secondary' : 'ghost'}
-            className={
-              connectionMode === 'arrow'
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : undefined
-            }
-            aria-pressed={connectionMode === 'arrow'}
-            title={ui(
-              language,
-              '下一条连线绘制为一胞腔',
-              'Draw the next connection as a 1-cell',
-            )}
-            onClick={() => onChooseLevel('arrow')}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (item.kind === 'arrow') {
+                commit();
+                return;
+              }
+              onPreviewLabel(null);
+              onChangeLevel('arrow', draftRef.current);
+            }}
           >
             {ui(language, '1-胞腔', '1-cell')}
           </Button>
           <Button
             type="button"
             size="xs"
-            variant={connectionMode === 'cell' ? 'secondary' : 'ghost'}
+            variant={item.kind === 'cell' ? 'secondary' : 'ghost'}
             className={
-              connectionMode === 'cell'
+              item.kind === 'cell'
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : undefined
             }
-            aria-pressed={connectionMode === 'cell'}
+            aria-pressed={item.kind === 'cell'}
             title={ui(
               language,
-              '下一条连线绘制为二胞腔',
-              'Draw the next connection as a 2-cell',
+              '将当前所选内容转换为二胞腔',
+              'Convert the selected connection to a 2-cell',
             )}
-            onClick={() => onChooseLevel('cell')}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (item.kind === 'cell') {
+                commit();
+                return;
+              }
+              onPreviewLabel(null);
+              onChangeLevel('cell', draftRef.current);
+            }}
           >
             {ui(language, '2-胞腔', '2-cell')}
           </Button>

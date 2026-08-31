@@ -14,6 +14,8 @@ import { FloatingCellEditor } from '@/components/floating-cell-editor';
 import { FloatingNodeEditor } from '@/components/floating-node-editor';
 import {
   areParallel,
+  arrowGridAnchors,
+  arrowPointAt,
   canPlaceNodes,
   constrainArrowCurve,
   displayTex,
@@ -51,7 +53,7 @@ export type ConnectionMode = 'auto' | 'arrow' | 'cell';
 export type CanvasAnchor =
   | { kind: 'point'; point: Point }
   | { kind: 'node'; id: NodeId; point: Point }
-  | { kind: 'arrow'; id: ArrowId; point: Point };
+  | { kind: 'arrow'; id: ArrowId; t: number; point: Point };
 
 interface DiagramCanvasProps {
   doc: DiagramDocument;
@@ -78,7 +80,11 @@ interface DiagramCanvasProps {
   onPatchNode: (id: NodeId, patch: Partial<DiagramNode>) => void;
   onPatchArrow: (id: ArrowId, patch: Partial<DiagramArrow>) => void;
   onPatchCell: (id: string, patch: Partial<DiagramTwoCell>) => void;
-  onChooseConnectionMode: (mode: ConnectionMode) => void;
+  onChangeSelectionLevel: (
+    selection: Extract<Selection, { kind: 'arrow' | 'cell' }>,
+    level: Exclude<ConnectionMode, 'auto'>,
+    label: string,
+  ) => void;
   onBeginLabelEdit: (selection: Selection) => void;
   onCommitLabel: (selection: Selection, label: string) => void;
   onCancelLabelEdit: () => void;
@@ -243,9 +249,7 @@ function MathLabel({
       active = false;
     };
   }, [anchor, html, width]);
-  const labelClass = paper
-    ? 'whitespace-nowrap rounded-[4px] bg-[#fbfaf7]/94 px-1.5 py-0.5'
-    : 'whitespace-nowrap';
+  const labelClass = 'inline-block w-max max-w-none whitespace-nowrap';
   return (
     <foreignObject
       x={anchor === 'first' ? x : x - width / 2}
@@ -266,17 +270,22 @@ function MathLabel({
         <span
           ref={labelRef}
           className={labelClass}
-          style={
-            anchor === 'first'
+          style={{
+            ...(anchor === 'first'
               ? {
-                  display: 'inline-block',
                   left: 0,
-                  position: 'absolute',
+                  position: 'absolute' as const,
                   top: '50%',
                   transform: `translate(${-firstGlyphCenter}px, -50%)`,
                 }
-              : undefined
-          }
+              : {}),
+            ...(paper
+              ? {
+                  filter:
+                    'drop-shadow(1px 0 #fff) drop-shadow(-1px 0 #fff) drop-shadow(0 1px #fff) drop-shadow(0 -1px #fff)',
+                }
+              : {}),
+          }}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>
@@ -293,11 +302,12 @@ function labelAnchor(doc: DiagramDocument, selection: Selection) {
     const arrow = doc.arrows.find((item) => item.id === selection.id);
     const geometry = arrow ? getArrowGeometry(doc, arrow) : null;
     if (!arrow || !geometry) return null;
+    const labelGeometry = arrowPointAt(geometry, arrow.labelPosition ?? 0.5);
     const side = arrow.labelSide === 'left' ? 1 : -1;
     return {
       point: {
-        x: geometry.midpoint.x + geometry.normal.x * 25 * side,
-        y: geometry.midpoint.y + geometry.normal.y * 25 * side,
+        x: labelGeometry.midpoint.x + labelGeometry.normal.x * 25 * side,
+        y: labelGeometry.midpoint.y + labelGeometry.normal.y * 25 * side,
       },
       label: arrow.label,
     };
@@ -402,24 +412,31 @@ function hitNode(doc: DiagramDocument, point: Point): NodeId | null {
   return null;
 }
 
-function arrowDistance(doc: DiagramDocument, arrowId: ArrowId, point: Point) {
+function nearestPointOnArrow(
+  doc: DiagramDocument,
+  arrowId: ArrowId,
+  point: Point,
+) {
   const arrow = doc.arrows.find((item) => item.id === arrowId);
   const geometry = arrow ? getArrowGeometry(doc, arrow) : null;
-  if (!geometry) return Number.POSITIVE_INFINITY;
-  let nearest = Number.POSITIVE_INFINITY;
-  for (let step = 0; step <= 30; step += 1) {
-    nearest = Math.min(
-      nearest,
-      distance(
-        point,
-        quadraticPoint(
-          geometry.start,
-          geometry.control,
-          geometry.end,
-          step / 30,
-        ),
-      ),
+  if (!geometry) return null;
+  let nearest = {
+    distance: Number.POSITIVE_INFINITY,
+    t: 0.5,
+    point: geometry.midpoint,
+  };
+  for (let step = 0; step <= 120; step += 1) {
+    const t = step / 120;
+    const candidatePoint = quadraticPoint(
+      geometry.start,
+      geometry.control,
+      geometry.end,
+      t,
     );
+    const candidateDistance = distance(point, candidatePoint);
+    if (candidateDistance < nearest.distance) {
+      nearest = { distance: candidateDistance, t, point: candidatePoint };
+    }
   }
   return nearest;
 }
@@ -432,12 +449,43 @@ function hitArrow(
   let best: { id: ArrowId; distance: number } | null = null;
   for (const arrow of doc.arrows) {
     if (arrow.id === exclude) continue;
-    const candidate = arrowDistance(doc, arrow.id, point);
-    if (candidate <= 22 && (!best || candidate < best.distance)) {
-      best = { id: arrow.id, distance: candidate };
+    const candidate = nearestPointOnArrow(doc, arrow.id, point);
+    if (
+      candidate &&
+      candidate.distance <= 22 &&
+      (!best || candidate.distance < best.distance)
+    ) {
+      best = { id: arrow.id, distance: candidate.distance };
     }
   }
   return best?.id ?? null;
+}
+
+function arrowAnchorFromPoint(
+  doc: DiagramDocument,
+  arrowId: ArrowId,
+  point: Point,
+): Extract<CanvasAnchor, { kind: 'arrow' }> | null {
+  const arrow = doc.arrows.find((item) => item.id === arrowId);
+  const nearest = nearestPointOnArrow(doc, arrowId, point);
+  if (!arrow || !nearest) return null;
+  const gridAnchor = arrowGridAnchors(doc, arrow)
+    .map((anchor) => ({ anchor, distance: distance(point, anchor) }))
+    .filter((candidate) => candidate.distance <= 24)
+    .sort((left, right) => left.distance - right.distance)[0]?.anchor;
+  return gridAnchor
+    ? {
+        kind: 'arrow',
+        id: arrowId,
+        t: gridAnchor.t,
+        point: { x: gridAnchor.x, y: gridAnchor.y },
+      }
+    : {
+        kind: 'arrow',
+        id: arrowId,
+        t: nearest.t,
+        point: nearest.point,
+      };
 }
 
 function anchorFromPoint(
@@ -452,9 +500,8 @@ function anchorFromPoint(
   }
   const arrowId = hitArrow(doc, point, excludeArrow);
   if (arrowId) {
-    const arrow = doc.arrows.find((item) => item.id === arrowId)!;
-    const geometry = getArrowGeometry(doc, arrow)!;
-    return { kind: 'arrow', id: arrow.id, point: geometry.midpoint };
+    const anchor = arrowAnchorFromPoint(doc, arrowId, point);
+    if (anchor) return anchor;
   }
   return { kind: 'point', point: snapPointToMatrix(doc, point) };
 }
@@ -590,7 +637,7 @@ export function DiagramCanvas({
   onPatchNode,
   onPatchArrow,
   onPatchCell,
-  onChooseConnectionMode,
+  onChangeSelectionLevel,
   onBeginLabelEdit,
   onCommitLabel,
   onCancelLabelEdit,
@@ -1083,8 +1130,8 @@ export function DiagramCanvas({
               x2={gridColumns.at(-1)}
               y2={y}
               stroke="#5b5360"
-              strokeWidth="1"
-              opacity=".14"
+              strokeWidth="1.15"
+              opacity=".24"
             />
           ))}
           {gridColumns.map((x) => (
@@ -1095,8 +1142,8 @@ export function DiagramCanvas({
               x2={x}
               y2={gridRows.at(-1)}
               stroke="#5b5360"
-              strokeWidth="1"
-              opacity=".14"
+              strokeWidth="1.15"
+              opacity=".24"
             />
           ))}
         </g>
@@ -1141,8 +1188,14 @@ export function DiagramCanvas({
                 ? 'url(#xyq-canvas-mapsto)'
                 : undefined;
           const side = arrow.labelSide === 'left' ? 1 : -1;
-          const labelX = geometry.midpoint.x + geometry.normal.x * 25 * side;
-          const labelY = geometry.midpoint.y + geometry.normal.y * 25 * side;
+          const labelGeometry = arrowPointAt(
+            geometry,
+            arrow.labelPosition ?? 0.5,
+          );
+          const labelX =
+            labelGeometry.midpoint.x + labelGeometry.normal.x * 25 * side;
+          const labelY =
+            labelGeometry.midpoint.y + labelGeometry.normal.y * 25 * side;
           return (
             <g
               key={arrow.id}
@@ -1156,11 +1209,13 @@ export function DiagramCanvas({
                   onArrowAction(arrow.id);
                   return;
                 }
-                beginConnect(event, {
-                  kind: 'arrow',
-                  id: arrow.id,
-                  point: geometry.midpoint,
-                });
+                const point = clientToScene(event.clientX, event.clientY);
+                const anchor = arrowAnchorFromPoint(
+                  previewDoc,
+                  arrow.id,
+                  point,
+                );
+                if (anchor) beginConnect(event, anchor);
               }}
               onDoubleClick={(event) => {
                 event.preventDefault();
@@ -1242,6 +1297,19 @@ export function DiagramCanvas({
                   paper
                 />
               )}
+              {selected &&
+                arrowGridAnchors(previewDoc, arrow).map((anchor) => (
+                  <circle
+                    key={`${arrow.id}-anchor-${anchor.x}-${anchor.y}`}
+                    cx={anchor.x}
+                    cy={anchor.y}
+                    r="4.5"
+                    fill="#fbfaf7"
+                    stroke="#8a4e75"
+                    strokeWidth="1.5"
+                    pointerEvents="none"
+                  />
+                ))}
             </g>
           );
         })}
@@ -1634,8 +1702,13 @@ export function DiagramCanvas({
                 <FloatingCellEditor
                   key={arrow.id}
                   item={{ kind: 'arrow', value: committedArrow }}
-                  connectionMode={connectionMode}
-                  onChooseLevel={onChooseConnectionMode}
+                  onChangeLevel={(level, label) =>
+                    onChangeSelectionLevel(
+                      { kind: 'arrow', id: arrow.id },
+                      level,
+                      label,
+                    )
+                  }
                   onCommitLabel={(label) => {
                     setLiveLabel(null);
                     onCommitLabel({ kind: 'arrow', id: arrow.id }, label);
@@ -1694,8 +1767,13 @@ export function DiagramCanvas({
                 <FloatingCellEditor
                   key={cell.id}
                   item={{ kind: 'cell', value: committedCell }}
-                  connectionMode={connectionMode}
-                  onChooseLevel={onChooseConnectionMode}
+                  onChangeLevel={(level, label) =>
+                    onChangeSelectionLevel(
+                      { kind: 'cell', id: cell.id },
+                      level,
+                      label,
+                    )
+                  }
                   onCommitLabel={(label) => {
                     setLiveLabel(null);
                     onCommitLabel({ kind: 'cell', id: cell.id }, label);
@@ -1798,7 +1876,9 @@ export function canvasAnchorToCellAnchor(
   anchor: CanvasAnchor,
 ): CellAnchor | null {
   if (anchor.kind === 'node') return { kind: 'node', id: anchor.id };
-  if (anchor.kind === 'arrow') return { kind: 'arrow', id: anchor.id, t: 0.5 };
+  if (anchor.kind === 'arrow') {
+    return { kind: 'arrow', id: anchor.id, t: anchor.t };
+  }
   return null;
 }
 

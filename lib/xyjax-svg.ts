@@ -130,7 +130,18 @@ function addBackground(svg: SVGSVGElement) {
   svg.insertBefore(rect, svg.firstChild);
 }
 
-function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 360) {
+function resizeLengthAttribute(
+  svg: SVGSVGElement,
+  name: 'width' | 'height',
+  ratio: number,
+) {
+  const value = svg.getAttribute(name) ?? '';
+  const match = value.trim().match(/^([0-9]*\.?[0-9]+)([a-zA-Z]+)$/);
+  if (!match || !Number.isFinite(ratio) || ratio <= 0) return;
+  svg.setAttribute(name, `${Number(match[1]) * ratio}${match[2]}`);
+}
+
+function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 160) {
   const current = (svg.getAttribute('viewBox') ?? '')
     .trim()
     .split(/\s+/)
@@ -144,29 +155,46 @@ function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 360) {
 
   const host = document.createElement('div');
   host.style.cssText =
-    'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none';
+    'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none;font-size:16px';
   host.appendChild(svg);
   document.body.appendChild(host);
   try {
-    const graphics =
-      svg.querySelector<SVGGraphicsElement>('g[data-mml-node="math"]') ??
-      svg.querySelector<SVGGraphicsElement>('g');
+    // Measure the top-level graphics and explicitly apply its SVG transform.
+    // Measuring MathJax's nested MathML group without its outer y-axis flip
+    // creates a gigantic viewBox and collapses the preview to a line.
+    const graphics = [...svg.children].find(
+      (element): element is SVGGraphicsElement =>
+        element.tagName.toLowerCase() === 'g',
+    );
     const bounds = graphics?.getBBox();
+    const matrix = graphics?.getCTM();
     if (
       !bounds ||
+      !matrix ||
       ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
     ) {
       return;
     }
     const [x, y, width, height] = current;
-    const left = Math.min(x, bounds.x - padding);
-    const top = Math.min(y, bounds.y - padding);
-    const right = Math.max(x + width, bounds.x + bounds.width + padding);
-    const bottom = Math.max(y + height, bounds.y + bounds.height + padding);
-    svg.setAttribute(
-      'viewBox',
-      `${left} ${top} ${right - left} ${bottom - top}`,
-    );
+    const corners = [
+      new DOMPoint(bounds.x, bounds.y),
+      new DOMPoint(bounds.x + bounds.width, bounds.y),
+      new DOMPoint(bounds.x, bounds.y + bounds.height),
+      new DOMPoint(bounds.x + bounds.width, bounds.y + bounds.height),
+    ].map((point) => point.matrixTransform(matrix));
+    const measuredLeft = Math.min(...corners.map((point) => point.x));
+    const measuredTop = Math.min(...corners.map((point) => point.y));
+    const measuredRight = Math.max(...corners.map((point) => point.x));
+    const measuredBottom = Math.max(...corners.map((point) => point.y));
+    const left = Math.min(x, measuredLeft - padding);
+    const top = Math.min(y, measuredTop - padding);
+    const right = Math.max(x + width, measuredRight + padding);
+    const bottom = Math.max(y + height, measuredBottom + padding);
+    const nextWidth = right - left;
+    const nextHeight = bottom - top;
+    svg.setAttribute('viewBox', `${left} ${top} ${nextWidth} ${nextHeight}`);
+    resizeLengthAttribute(svg, 'width', nextWidth / width);
+    resizeLengthAttribute(svg, 'height', nextHeight / height);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   } catch {
     // Keep MathJax's original viewBox if this browser cannot measure SVG text.
