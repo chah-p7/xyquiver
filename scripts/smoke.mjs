@@ -122,3 +122,26 @@ const fullLatex = generateXyPic(quasi, 'latex').text;
 if (!fullLatex.includes('\\documentclass') || fullLatex.includes('\\[\n')) {
   throw new Error('latex export: invalid nested display wrapper');
 }
+
+const styled = JSON.parse(JSON.stringify(exampleDocuments.quasicategory));
+Object.assign(
+  styled.arrows.find((arrow) => arrow.id === 'q-f'),
+  { stroke: 'dashed', head: 'twohead', tail: 'hook' },
+);
+Object.assign(
+  styled.arrows.find((arrow) => arrow.id === 'q-h'),
+  { stroke: 'double', head: 'none', tail: 'mapsto' },
+);
+const styledSvg = generateSvg(styled);
+const styledXy = generateXyPic(styled, 'snippet').text;
+if (
+  !styledSvg.includes('marker-start="url(#xyq-export-hook)"') ||
+  !styledSvg.includes('marker-start="url(#xyq-export-mapsto)"') ||
+  !styledSvg.includes('stroke-dasharray="11 7"') ||
+  !styledXy.includes('@{^{(}-->>}') ||
+  !styledXy.includes('@{|=}')
+) {
+  throw new Error(
+    'arrow styles: combined body, tail, and head were not exported',
+  );
+}

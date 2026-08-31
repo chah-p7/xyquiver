@@ -142,7 +142,7 @@ function MathLabel({
   width,
   height = 38,
   color = '#222735',
-  size = 15,
+  size = 17,
   paper = false,
 }: {
   tex: string;
@@ -194,8 +194,8 @@ function labelAnchor(doc: DiagramDocument, selection: Selection) {
     const side = arrow.labelSide === 'left' ? 1 : -1;
     return {
       point: {
-        x: geometry.midpoint.x + geometry.normal.x * 23 * side,
-        y: geometry.midpoint.y + geometry.normal.y * 23 * side,
+        x: geometry.midpoint.x + geometry.normal.x * 25 * side,
+        y: geometry.midpoint.y + geometry.normal.y * 25 * side,
       },
       label: arrow.label,
     };
@@ -205,8 +205,8 @@ function labelAnchor(doc: DiagramDocument, selection: Selection) {
   return cell && geometry
     ? {
         point: {
-          x: geometry.midpoint.x + geometry.normal.x * 18,
-          y: geometry.midpoint.y + geometry.normal.y * 18,
+          x: geometry.midpoint.x + geometry.normal.x * 20,
+          y: geometry.midpoint.y + geometry.normal.y * 20,
         },
         label: cell.label,
       }
@@ -401,8 +401,8 @@ function CellGlyph({
     ? { x: -geometry.direction.x, y: -geometry.direction.y }
     : geometry.direction;
   const shaftTip = {
-    x: tip.x - direction.x * (head === 'arrow' || head === 'reverse' ? 7 : 0),
-    y: tip.y - direction.y * (head === 'arrow' || head === 'reverse' ? 7 : 0),
+    x: tip.x - direction.x * (head === 'arrow' || head === 'reverse' ? 8.5 : 0),
+    y: tip.y - direction.y * (head === 'arrow' || head === 'reverse' ? 8.5 : 0),
   };
   const line = (amount: number) => {
     const start = {
@@ -415,34 +415,34 @@ function CellGlyph({
     };
     const from = reverse
       ? {
-          x: start.x + geometry.direction.x * (hasHead ? 7 : 0),
-          y: start.y + geometry.direction.y * (hasHead ? 7 : 0),
+          x: start.x + geometry.direction.x * (hasHead ? 8.5 : 0),
+          y: start.y + geometry.direction.y * (hasHead ? 8.5 : 0),
         }
       : start;
     const to = reverse
       ? end
       : {
-          x: end.x - geometry.direction.x * (hasHead ? 7 : 0),
-          y: end.y - geometry.direction.y * (hasHead ? 7 : 0),
+          x: end.x - geometry.direction.x * (hasHead ? 8.5 : 0),
+          y: end.y - geometry.direction.y * (hasHead ? 8.5 : 0),
         };
     return (
       <path
         d={`M ${from.x} ${from.y} L ${to.x} ${to.y}`}
         fill="none"
         stroke={color}
-        strokeWidth={selected ? 2.2 : 1.55}
+        strokeWidth={selected ? 2.4 : 1.75}
         strokeLinecap="round"
         pointerEvents="none"
       />
     );
   };
   const wingA = {
-    x: shaftTip.x + geometry.normal.x * 5,
-    y: shaftTip.y + geometry.normal.y * 5,
+    x: shaftTip.x + geometry.normal.x * 5.8,
+    y: shaftTip.y + geometry.normal.y * 5.8,
   };
   const wingB = {
-    x: shaftTip.x - geometry.normal.x * 5,
-    y: shaftTip.y - geometry.normal.y * 5,
+    x: shaftTip.x - geometry.normal.x * 5.8,
+    y: shaftTip.y - geometry.normal.y * 5.8,
   };
   return (
     <>
@@ -453,7 +453,7 @@ function CellGlyph({
           d={`M ${wingA.x} ${wingA.y} L ${tip.x} ${tip.y} L ${wingB.x} ${wingB.y}`}
           fill="none"
           stroke={color}
-          strokeWidth={selected ? 2.2 : 1.55}
+          strokeWidth={selected ? 2.4 : 1.75}
           strokeLinecap="round"
           strokeLinejoin="round"
           pointerEvents="none"
@@ -777,17 +777,18 @@ export function DiagramCanvas({
           viewBox="-10 -5 10 10"
           refX="0"
           refY="0"
-          markerWidth="9"
-          markerHeight="9"
+          markerWidth="11"
+          markerHeight="11"
           markerUnits="userSpaceOnUse"
           orient="auto"
           overflow="visible"
         >
           <path
-            d="M -8 -4.25 L 0 0 L -8 4.25"
+            d="M -9 -4.75 L 0 0 L -9 4.75"
             fill="none"
             stroke="context-stroke"
-            strokeWidth="1.45"
+            strokeWidth="1.65"
+            strokeLinecap="round"
             strokeLinejoin="round"
           />
         </marker>
@@ -796,8 +797,8 @@ export function DiagramCanvas({
           viewBox="-15 -6 15 12"
           refX="0"
           refY="0"
-          markerWidth="15"
-          markerHeight="12"
+          markerWidth="17"
+          markerHeight="13"
           markerUnits="userSpaceOnUse"
           orient="auto"
           overflow="visible"
@@ -806,7 +807,46 @@ export function DiagramCanvas({
             d="M -8 -5 L 0 0 L -8 5 M -14 -5 L -6 0 L -14 5"
             fill="none"
             stroke="context-stroke"
-            strokeWidth="1.8"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+          />
+        </marker>
+        <marker
+          id="xyq-canvas-hook"
+          viewBox="0 -8 13 16"
+          refX="0"
+          refY="0"
+          markerWidth="13"
+          markerHeight="16"
+          markerUnits="userSpaceOnUse"
+          orient="auto"
+          overflow="visible"
+        >
+          <path
+            d="M 0 0 C 0 -7 8 -7 10 -2"
+            fill="none"
+            stroke="context-stroke"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+          />
+        </marker>
+        <marker
+          id="xyq-canvas-mapsto"
+          viewBox="0 -8 9 16"
+          refX="1"
+          refY="0"
+          markerWidth="9"
+          markerHeight="16"
+          markerUnits="userSpaceOnUse"
+          orient="auto"
+          overflow="visible"
+        >
+          <path
+            d="M 1 -7 L 1 7"
+            fill="none"
+            stroke="context-stroke"
+            strokeWidth="1.9"
+            strokeLinecap="round"
           />
         </marker>
       </defs>
@@ -913,9 +953,9 @@ export function DiagramCanvas({
               : arrow.color;
           const dash =
             arrow.stroke === 'dashed'
-              ? '10 7'
+              ? '11 7'
               : arrow.stroke === 'dotted'
-                ? '2 7'
+                ? '2 7.5'
                 : undefined;
           const markerEnd =
             arrow.head === 'none'
@@ -923,9 +963,15 @@ export function DiagramCanvas({
               : arrow.head === 'twohead'
                 ? 'url(#xyq-canvas-twohead)'
                 : 'url(#xyq-canvas-arrow)';
+          const markerStart =
+            arrow.tail === 'hook'
+              ? 'url(#xyq-canvas-hook)'
+              : arrow.tail === 'mapsto'
+                ? 'url(#xyq-canvas-mapsto)'
+                : undefined;
           const side = arrow.labelSide === 'left' ? 1 : -1;
-          const labelX = geometry.midpoint.x + geometry.normal.x * 23 * side;
-          const labelY = geometry.midpoint.y + geometry.normal.y * 23 * side;
+          const labelX = geometry.midpoint.x + geometry.normal.x * 25 * side;
+          const labelY = geometry.midpoint.y + geometry.normal.y * 25 * side;
           return (
             <g
               key={arrow.id}
@@ -986,14 +1032,15 @@ export function DiagramCanvas({
                     d={offsetPath(geometry, -2.6)}
                     fill="none"
                     stroke={color}
-                    strokeWidth="1.7"
+                    strokeWidth="1.9"
+                    markerStart={markerStart}
                     pointerEvents="none"
                   />
                   <path
                     d={offsetPath(geometry, 2.6)}
                     fill="none"
                     stroke={color}
-                    strokeWidth="1.7"
+                    strokeWidth="1.9"
                     markerEnd={markerEnd}
                     pointerEvents="none"
                   />
@@ -1003,9 +1050,10 @@ export function DiagramCanvas({
                   d={geometry.path}
                   fill="none"
                   stroke={color}
-                  strokeWidth={selected || pending ? 2.25 : 1.65}
+                  strokeWidth={selected || pending ? 2.5 : 1.9}
                   strokeDasharray={dash}
                   strokeLinecap={arrow.stroke === 'dotted' ? 'round' : 'butt'}
+                  markerStart={markerStart}
                   markerEnd={markerEnd}
                   pointerEvents="none"
                 />
@@ -1017,7 +1065,7 @@ export function DiagramCanvas({
                   y={labelY}
                   width={Math.min(
                     250,
-                    Math.max(48, displayTex(arrow.label).length * 10 + 26),
+                    Math.max(52, displayTex(arrow.label).length * 11 + 28),
                   )}
                   color="#2b3040"
                   paper
@@ -1087,14 +1135,14 @@ export function DiagramCanvas({
               {!sameSelection(editing, 'cell', cell.id) && (
                 <MathLabel
                   tex={cell.label}
-                  x={geometry.midpoint.x + geometry.normal.x * 18}
-                  y={geometry.midpoint.y + geometry.normal.y * 18}
+                  x={geometry.midpoint.x + geometry.normal.x * 20}
+                  y={geometry.midpoint.y + geometry.normal.y * 20}
                   width={Math.min(
                     220,
-                    Math.max(48, displayTex(cell.label).length * 10 + 24),
+                    Math.max(52, displayTex(cell.label).length * 11 + 26),
                   )}
                   color="#6c3f63"
-                  size={15.5}
+                  size={17}
                   paper
                 />
               )}
@@ -1229,7 +1277,7 @@ export function DiagramCanvas({
                   width={metrics.width + 34}
                   height={50}
                   color="#1f2532"
-                  size={19}
+                  size={22}
                 />
               ) : null}
               {(selected || pending) && (

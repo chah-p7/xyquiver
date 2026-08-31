@@ -16,7 +16,7 @@ function pagesBasePath(value: string | undefined) {
 }
 
 export default defineConfig({
-  root: path.join(projectRoot, 'pages'),
+  root: path.join(projectRoot, 'github-pages'),
   publicDir: path.join(projectRoot, 'public'),
   base: pagesBasePath(process.env.PAGES_BASE_PATH),
   plugins: [react()],

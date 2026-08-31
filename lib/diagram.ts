@@ -253,8 +253,8 @@ export function nodeMetrics(node: DiagramNode) {
   if (node.ghost) return { width: 14, height: 14 };
   const label = displayTex(node.label);
   return {
-    width: Math.min(280, Math.max(34, label.length * 9 + 18)),
-    height: 34,
+    width: Math.min(300, Math.max(40, label.length * 10.5 + 22)),
+    height: 40,
   };
 }
 
@@ -919,9 +919,9 @@ export function generateSvg(
       const color = colorOrDefault(arrow.color, '#1f2937');
       const dash =
         arrow.stroke === 'dashed'
-          ? ' stroke-dasharray="10 7"'
+          ? ' stroke-dasharray="11 7"'
           : arrow.stroke === 'dotted'
-            ? ' stroke-dasharray="2 7" stroke-linecap="round"'
+            ? ' stroke-dasharray="2 7.5" stroke-linecap="round"'
             : '';
       const marker =
         arrow.head === 'none'
@@ -931,18 +931,18 @@ export function generateSvg(
         arrow.tail === 'none'
           ? ''
           : ` marker-start="url(#${prefix}-${arrow.tail})"`;
-      const common = `fill="none" stroke="${color}" stroke-width="2"${dash}${tail}`;
+      const common = `fill="none" stroke="${color}" stroke-width="2.2"${dash}`;
       const paths =
         arrow.stroke === 'double'
-          ? `<path d="${shiftedPath(geometry, -2.4)}" ${common}/><path d="${shiftedPath(geometry, 2.4)}" ${common}${marker}/>`
-          : `<path d="${geometry.path}" ${common}${marker}/>`;
+          ? `<path d="${shiftedPath(geometry, -2.6)}" ${common}${tail}/><path d="${shiftedPath(geometry, 2.6)}" ${common}${marker}/>`
+          : `<path d="${geometry.path}" ${common}${tail}${marker}/>`;
       if (!arrow.label) return paths;
       const side = arrow.labelSide === 'left' ? 1 : -1;
       const label = {
-        x: geometry.midpoint.x + geometry.normal.x * 20 * side,
-        y: geometry.midpoint.y + geometry.normal.y * 20 * side,
+        x: geometry.midpoint.x + geometry.normal.x * 23 * side,
+        y: geometry.midpoint.y + geometry.normal.y * 23 * side,
       };
-      return `${paths}<text x="${round(label.x)}" y="${round(label.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="17" fill="${color}" stroke="#ffffff" stroke-width="5" paint-order="stroke fill">${xml(displayTex(arrow.label))}</text>`;
+      return `${paths}<text x="${round(label.x)}" y="${round(label.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(arrow.label))}</text>`;
     })
     .join('');
   const cellMarkup = doc.cells
@@ -958,16 +958,16 @@ export function generateSvg(
         ? { x: -geometry.direction.x, y: -geometry.direction.y }
         : geometry.direction;
       const shaftTip = {
-        x: tip.x - tipDirection.x * 7,
-        y: tip.y - tipDirection.y * 7,
+        x: tip.x - tipDirection.x * 8.5,
+        y: tip.y - tipDirection.y * 8.5,
       };
       const wingA = {
-        x: shaftTip.x + geometry.normal.x * 5,
-        y: shaftTip.y + geometry.normal.y * 5,
+        x: shaftTip.x + geometry.normal.x * 5.8,
+        y: shaftTip.y + geometry.normal.y * 5.8,
       };
       const wingB = {
-        x: shaftTip.x - geometry.normal.x * 5,
-        y: shaftTip.y - geometry.normal.y * 5,
+        x: shaftTip.x - geometry.normal.x * 5.8,
+        y: shaftTip.y - geometry.normal.y * 5.8,
       };
       const line = (amount: number) => {
         const start = {
@@ -979,37 +979,37 @@ export function generateSvg(
           y: geometry.end.y + offset.y * amount,
         };
         const x1 = reverse
-          ? start.x + geometry.direction.x * (hasHead ? 7 : 0)
+          ? start.x + geometry.direction.x * (hasHead ? 8.5 : 0)
           : start.x;
         const y1 = reverse
-          ? start.y + geometry.direction.y * (hasHead ? 7 : 0)
+          ? start.y + geometry.direction.y * (hasHead ? 8.5 : 0)
           : start.y;
         const x2 = reverse
           ? end.x
-          : end.x - geometry.direction.x * (hasHead ? 7 : 0);
+          : end.x - geometry.direction.x * (hasHead ? 8.5 : 0);
         const y2 = reverse
           ? end.y
-          : end.y - geometry.direction.y * (hasHead ? 7 : 0);
-        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round"/>`;
+          : end.y - geometry.direction.y * (hasHead ? 8.5 : 0);
+        return `<path d="M ${round(x1)} ${round(y1)} L ${round(x2)} ${round(y2)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
       };
       const head =
         cell.head === 'equality' || cell.head === 'none'
           ? ''
-          : `<path d="M ${round(wingA.x)} ${round(wingA.y)} L ${round(tip.x)} ${round(tip.y)} L ${round(wingB.x)} ${round(wingB.y)}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
-      const labelX = geometry.midpoint.x + geometry.normal.x * 17;
-      const labelY = geometry.midpoint.y + geometry.normal.y * 17;
+          : `<path d="M ${round(wingA.x)} ${round(wingA.y)} L ${round(tip.x)} ${round(tip.y)} L ${round(wingB.x)} ${round(wingB.y)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+      const labelX = geometry.midpoint.x + geometry.normal.x * 20;
+      const labelY = geometry.midpoint.y + geometry.normal.y * 20;
       const shaft = cell.head === 'none' ? '' : `${line(-2.6)}${line(2.6)}`;
-      return `${shaft}${head}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="17" fill="${color}" stroke="#ffffff" stroke-width="5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
+      return `${shaft}${head}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
     })
     .join('');
   const nodeMarkup = doc.nodes
     .filter((node) => !node.ghost)
     .map(
       (node) =>
-        `<text x="${round(node.x)}" y="${round(node.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="21" font-weight="500" fill="#111827" stroke="#ffffff" stroke-width="7" paint-order="stroke fill">${xml(displayTex(node.label))}</text>`,
+        `<text x="${round(node.x)}" y="${round(node.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="24" font-weight="500" fill="#111827" stroke="#ffffff" stroke-width="8" paint-order="stroke fill">${xml(displayTex(node.label))}</text>`,
     )
     .join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" width="${bounds.width}" height="${bounds.height}" role="img"><title>${xml(doc.title || 'XyQuiver diagram')}</title><desc>Categorical diagram exported as editable vector paths and text by XyQuiver.</desc><defs><marker id="${prefix}-arrow" viewBox="-10 -5 10 10" refX="0" refY="0" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -9 -5 L 0 0 L -9 5 Z" fill="#1f2937"/></marker><marker id="${prefix}-twohead" viewBox="-14 -6 14 12" refX="0" refY="0" markerWidth="14" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -8 -5 L 0 0 L -8 5 M -13 -5 L -5 0 L -13 5" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-hook" viewBox="0 -7 12 14" refX="0" refY="0" markerWidth="12" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 0 0 C 0 -6 7 -6 8 -2" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker><marker id="${prefix}-mapsto" viewBox="0 -7 8 14" refX="0" refY="0" markerWidth="8" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 1 -6 L 1 6" fill="none" stroke="#1f2937" stroke-width="1.8"/></marker></defs>${background}<g>${arrowMarkup}</g><g>${cellMarkup}</g><g>${nodeMarkup}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" width="${bounds.width}" height="${bounds.height}" role="img"><title>${xml(doc.title || 'XyQuiver diagram')}</title><desc>Categorical diagram exported as editable vector paths and text by XyQuiver.</desc><defs><marker id="${prefix}-arrow" viewBox="-11 -6 11 12" refX="0" refY="0" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -10 -5.25 L 0 0 L -10 5.25" fill="none" stroke="#1f2937" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></marker><marker id="${prefix}-twohead" viewBox="-16 -7 16 14" refX="0" refY="0" markerWidth="17" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M -9 -5.5 L 0 0 L -9 5.5 M -15 -5.5 L -6 0 L -15 5.5" fill="none" stroke="#1f2937" stroke-width="1.9" stroke-linecap="round"/></marker><marker id="${prefix}-hook" viewBox="0 -8 13 16" refX="0" refY="0" markerWidth="13" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 0 0 C 0 -7 8 -7 10 -2" fill="none" stroke="#1f2937" stroke-width="1.9" stroke-linecap="round"/></marker><marker id="${prefix}-mapsto" viewBox="0 -8 9 16" refX="1" refY="0" markerWidth="9" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto" overflow="visible"><path d="M 1 -7 L 1 7" fill="none" stroke="#1f2937" stroke-width="1.9" stroke-linecap="round"/></marker></defs>${background}<g>${arrowMarkup}</g><g>${cellMarkup}</g><g>${nodeMarkup}</g></svg>`;
 }
 
 function safeTex(value: string): string {
@@ -1052,22 +1052,21 @@ function arrowXyCommand(
       : arrow.curve > 0
         ? `@/^${round(Math.abs(arrow.curve) / 45)}em/`
         : `@/_${round(Math.abs(arrow.curve) / 45)}em/`;
-  const style =
+  const isDefaultStyle =
+    arrow.stroke === 'solid' && arrow.head === 'arrow' && arrow.tail === 'none';
+  const tail =
+    arrow.tail === 'hook' ? '^{(}' : arrow.tail === 'mapsto' ? '|' : '';
+  const body =
     arrow.stroke === 'dashed'
-      ? '@{-->}'
+      ? '--'
       : arrow.stroke === 'dotted'
-        ? '@{.>}'
+        ? '.'
         : arrow.stroke === 'double'
-          ? '@{=>}'
-          : arrow.head === 'none'
-            ? '@{-}'
-            : arrow.head === 'twohead'
-              ? '@{->>}'
-              : arrow.tail === 'hook'
-                ? '@{^{(}->}'
-                : arrow.tail === 'mapsto'
-                  ? '@{|->}'
-                  : '';
+          ? '='
+          : '-';
+  const head =
+    arrow.head === 'twohead' ? '>>' : arrow.head === 'arrow' ? '>' : '';
+  const style = isDefaultStyle ? '' : `@{${tail}${body}${head}}`;
   const label = arrow.label
     ? `${arrow.labelSide === 'left' ? '^' : '_'}{${safeTex(arrow.label)}}`
     : '';
