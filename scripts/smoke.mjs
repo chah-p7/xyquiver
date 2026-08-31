@@ -61,7 +61,8 @@ if (
 if (
   resolveConnectionLevel('cell', 'node', 'node') !== 'cell' ||
   resolveConnectionLevel('arrow', 'node', 'node') !== 'arrow' ||
-  resolveConnectionLevel('auto', 'node', 'arrow') !== 'cell'
+  resolveConnectionLevel('auto', 'node', 'arrow') !== 'cell' ||
+  resolveConnectionLevel('auto', 'cell', 'cell') !== 'three'
 ) {
   throw new Error(
     'connection level: explicit 1-cell/2-cell choice was ignored',
@@ -185,12 +186,18 @@ if (
   parallel.arrows.some((arrow) => arrow.id === 'a-rho0') ||
   parallel.arrows.find((arrow) => arrow.id === 'a-rho1')?.source !== 'n-cp' ||
   parallel.arrows.find((arrow) => arrow.id === 'a-rho1p')?.source !== 'n-cp' ||
+  parallel.cells.filter((cell) => (cell.level ?? 2) === 2).length !== 2 ||
+  parallel.cells.filter((cell) => cell.level === 3).length !== 1 ||
   !isNativeParallelCell(parallel, parallel.cells[0]) ||
+  !isNativeParallelCell(parallel, parallel.cells[1]) ||
   !anchoredParallelXy.includes("\\rlap{C'_i=C+d\\rho_2") ||
   !anchoredParallelXy.includes("=C+d\\rho'_2}\\phantom{C}") ||
   anchoredParallelXy.includes('\\hbox{\\rlap') ||
-  !anchoredParallelXy.includes('\\xtwocell') ||
-  !anchoredParallelXy.includes("^{\\rho_1}_{\\rho'_1}")
+  anchoredParallelXy.includes('\\xtwocell') ||
+  (anchoredParallelXy.match(/\\ar@\/[\^_]0\.53pc\/@\{=>\}/g) ?? [])
+    .length !== 2 ||
+  !anchoredParallelXy.includes('\\ar@{<==}') ||
+  !anchoredParallelXy.includes('{\\rho_0}')
 ) {
   throw new Error(
     'parallel example: native boundaries or first-glyph anchoring regressed',
@@ -238,12 +245,39 @@ if (
   connectingMap.target !== 's-coker-f' ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@C=2.8pc @R=1.9pc') ||
-  !homotopyXy.includes('\\ar[rr]^{\\overset') ||
-  !homotopyXy.includes('\\ar@{}[rr]|(0.64)*{}="xyq-a1"') ||
-  homotopyXy.includes('\\ar[rrrr]')
+  !homotopyXy.includes('@C=0.3pc @R=0.3pc') ||
+  !homotopyXy.includes(
+    `\\ar[${'r'.repeat(20)}]^{\\overset`,
+  ) ||
+  !homotopyXy.includes(
+    `\\ar@{}[${'r'.repeat(20)}]|(0.64)*{}="xyq-a1"`,
+  )
 ) {
   throw new Error('snake lemma or logical Xy-pic alignment regressed');
+}
+
+const movedHomotopy = JSON.parse(JSON.stringify(homotopy));
+movedHomotopy.nodes.find((node) => node.id === 'n-xr').x -= 40;
+const movedHomotopyXy = generateXyPic(movedHomotopy, 'snippet').text;
+if (
+  movedHomotopyXy === homotopyXy ||
+  !movedHomotopyXy.includes(`\\ar[${'r'.repeat(19)}]^{\\overset`)
+) {
+  throw new Error(
+    'canvas/source mapping: moving one visual grid cell did not change one Xy-pic hop',
+  );
+}
+
+const parallelRoundTrip = validateDocument(
+  JSON.parse(JSON.stringify(parallel)),
+);
+if (
+  !parallelRoundTrip ||
+  parallelRoundTrip.cells.filter((cell) => (cell.level ?? 2) === 2).length !==
+    2 ||
+  parallelRoundTrip.cells.filter((cell) => cell.level === 3).length !== 1
+) {
+  throw new Error('parallel higher cells: duplicate 2-cells or 3-cell were lost');
 }
 
 const oldDraft = JSON.parse(JSON.stringify(homotopy));
@@ -293,7 +327,7 @@ if (
   !quasiXy.includes('\\ar@{=>}') ||
   !quasiXy.includes('^(.35){\\alpha}') ||
   !quasiXy.includes('|(0.5)*{}="xyq-a1"') ||
-  !quasiXy.includes('\\POS "1,2"')
+  !quasiXy.includes('\\POS "1,11"')
 ) {
   throw new Error(
     'quasicategory: vertex-to-edge 2-cell was not attached to a named path position',
@@ -358,7 +392,7 @@ if (isNativeParallelCell(nonMidpoint, nonMidpoint.cells[0])) {
 
 const nativeCurves = JSON.parse(JSON.stringify(exampleDocuments.twocell));
 nativeCurves.arrows.find((arrow) => arrow.id === 'a-g').curve = 220;
-if (constrainArrowCurve(nativeCurves, 'a-f', 220) !== 192) {
+if (constrainArrowCurve(nativeCurves, 'a-f', 220) !== 180) {
   throw new Error('curve constraint: failed at the positive boundary');
 }
 if (
@@ -366,9 +400,9 @@ if (
     exampleDocuments.twocell,
     { kind: 'arrow', id: 'a-g', t: 0.5 },
     { kind: 'arrow', id: 'a-f', t: 0.5 },
-  ) !== 'duplicate'
+  ) !== null
 ) {
-  throw new Error('cell conflict: reversed duplicate pair was not rejected');
+  throw new Error('cell conflict: a parallel duplicate pair was rejected');
 }
 
 const fullLatex = generateXyPic(quasi, 'latex').text;

@@ -15,6 +15,7 @@ import { Slider } from '@/components/ui/slider';
 import {
   resolvedCellHead,
   resolvedCellStroke,
+  snapCurveLevel,
   type CellHead,
   type CellStroke,
   type DiagramTwoCell,
@@ -25,10 +26,12 @@ import { cn } from '@/lib/utils';
 function CellStylePreview({
   stroke,
   head,
+  level = 2,
   className,
 }: {
   stroke: CellStroke;
   head: Exclude<CellHead, 'equality'>;
+  level?: 2 | 3;
   className?: string;
 }) {
   const dash =
@@ -57,7 +60,7 @@ function CellStylePreview({
         </text>
       ) : (
         <>
-          {[13, 19].map((y) => (
+          {(level === 3 ? [10, 16, 22] : [13, 19]).map((y) => (
             <path
               key={y}
               d={`M ${lineStart} ${y} L ${lineEnd} ${y}`}
@@ -99,12 +102,14 @@ function CellStyleChoice({
   selected,
   stroke,
   head,
+  level = 2,
   onSelect,
 }: {
   label: string;
   selected: boolean;
   stroke: CellStroke;
   head: Exclude<CellHead, 'equality'>;
+  level?: 2 | 3;
   onSelect: () => void;
 }) {
   return (
@@ -117,7 +122,12 @@ function CellStyleChoice({
       title={label}
       onClick={onSelect}
     >
-      <CellStylePreview stroke={stroke} head={head} className="h-6 w-full" />
+      <CellStylePreview
+        stroke={stroke}
+        head={head}
+        level={level}
+        className="h-6 w-full"
+      />
       <span className="text-[10px] font-medium leading-none">{label}</span>
     </Button>
   );
@@ -139,6 +149,7 @@ export function CellStylePopover({
   sideOffset?: number;
 }) {
   const language = useUiLanguage();
+  const level = cell.level ?? 2;
   const stroke = resolvedCellStroke(cell);
   const head = resolvedCellHead(cell);
   const curve = cell.curve ?? 0;
@@ -162,10 +173,10 @@ export function CellStylePopover({
             size={compact ? 'sm' : 'default'}
             aria-label={ui(
               language,
-              '打开二胞腔样式菜单',
-              'Open 2-cell style menu',
+              `打开${level}-胞腔样式菜单`,
+              `Open ${level}-cell style menu`,
             )}
-            title={ui(language, '二胞腔样式', '2-cell style')}
+            title={ui(language, `${level}-胞腔样式`, `${level}-cell style`)}
             className={cn(
               compact
                 ? 'h-8 min-w-28 flex-1 justify-between gap-1.5 rounded-lg bg-background px-2 shadow-none'
@@ -179,6 +190,7 @@ export function CellStylePopover({
             <CellStylePreview
               stroke={stroke}
               head={head}
+              level={level}
               className="h-6 min-w-20 flex-1"
             />
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -189,10 +201,11 @@ export function CellStylePopover({
               <CellStylePreview
                 stroke={stroke}
                 head={head}
+                level={level}
                 className="h-7 w-full max-w-40"
               />
               <span className="block truncate text-[10px] text-muted-foreground">
-                {ui(language, '层级 2', 'Level 2')} ·{' '}
+                {ui(language, `层级 ${level}`, `Level ${level}`)} ·{' '}
                 {ui(
                   language,
                   stroke === 'solid'
@@ -229,17 +242,17 @@ export function CellStylePopover({
         <PopoverHeader>
           <div className="flex items-center gap-2">
             <PopoverTitle>
-              {ui(language, '二胞腔样式', '2-cell style')}
+              {ui(language, `${level}-胞腔样式`, `${level}-cell style`)}
             </PopoverTitle>
             <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-indigo-700">
-              {ui(language, '层级 2', 'Level 2')}
+              {ui(language, `层级 ${level}`, `Level ${level}`)}
             </span>
           </div>
           <PopoverDescription>
             {ui(
               language,
-              '改变图形样式时，二胞腔的高阶边界数据保持不变。',
-              'A 2-cell keeps its higher boundary data while its glyph changes.',
+              '改变图形样式时，高阶边界数据保持不变。',
+              `A ${level}-cell keeps its higher boundary data while its glyph changes.`,
             )}
           </PopoverDescription>
         </PopoverHeader>
@@ -269,10 +282,18 @@ export function CellStylePopover({
             value={[curve]}
             min={-220}
             max={220}
-            step={2}
-            aria-label={ui(language, '二胞腔弯曲度', '2-cell curvature')}
+            step={1}
+            aria-label={ui(
+              language,
+              `${level}-胞腔弯曲度`,
+              `${level}-cell curvature`,
+            )}
             onValueChange={(value) =>
-              onPatch({ curve: Array.isArray(value) ? value[0] : value })
+              onPatch({
+                curve: snapCurveLevel(
+                  Array.isArray(value) ? value[0] : value,
+                ),
+              })
             }
           />
           <p className="text-[10px] leading-4 text-muted-foreground">
@@ -286,7 +307,11 @@ export function CellStylePopover({
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            {ui(language, '双线线身', 'Double-line body')}
+            {ui(
+              language,
+              level === 3 ? '三线线身' : '双线线身',
+              level === 3 ? 'Triple-line body' : 'Double-line body',
+            )}
           </p>
           <div className="grid grid-cols-4 gap-1.5">
             {(['solid', 'dashed', 'dotted', 'none'] as const).map((value) => (
@@ -304,6 +329,7 @@ export function CellStylePopover({
                 selected={stroke === value}
                 stroke={value}
                 head={head}
+                level={level}
                 onSelect={() => setStroke(value)}
               />
             ))}
@@ -320,6 +346,7 @@ export function CellStylePopover({
               selected={head === 'arrow' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="arrow"
+              level={level}
               onSelect={() => setHead('arrow')}
             />
             <CellStyleChoice
@@ -327,6 +354,7 @@ export function CellStylePopover({
               selected={head === 'reverse' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="reverse"
+              level={level}
               onSelect={() => setHead('reverse')}
             />
             <CellStyleChoice
@@ -334,6 +362,7 @@ export function CellStylePopover({
               selected={head === 'none' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="none"
+              level={level}
               onSelect={() => setHead('none')}
             />
           </div>

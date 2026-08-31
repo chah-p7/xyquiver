@@ -33,6 +33,7 @@ import {
   sceneGridEdges,
   selectionKey,
   selectionsInRect,
+  snapCurveLevel,
   snapPointToMatrix,
   type ArrowId,
   type CellAnchor,
@@ -47,12 +48,13 @@ import {
 import { ui, useUiLanguage } from '@/lib/i18n';
 
 export type EditorTool = 'select' | 'object' | 'arrow' | 'cell';
-export type ConnectionMode = 'auto' | 'arrow' | 'cell';
+export type ConnectionMode = 'auto' | 'arrow' | 'cell' | 'three';
 
 export type CanvasAnchor =
   | { kind: 'point'; point: Point }
   | { kind: 'node'; id: NodeId; point: Point }
-  | { kind: 'arrow'; id: ArrowId; t: number; point: Point };
+  | { kind: 'arrow'; id: ArrowId; t: number; point: Point }
+  | { kind: 'cell'; id: string; point: Point };
 
 interface DiagramCanvasProps {
   doc: DiagramDocument;
@@ -499,7 +501,28 @@ function anchorFromPoint(
   doc: DiagramDocument,
   point: Point,
   excludeArrow?: ArrowId,
+  excludeCell?: string,
 ): CanvasAnchor {
+  if (excludeCell !== undefined) {
+    let nearest: { id: string; point: Point; distance: number } | null = null;
+    for (const cell of doc.cells) {
+      if (cell.id === excludeCell || (cell.level ?? 2) !== 2) continue;
+      const geometry = getCellGeometry(doc, cell);
+      if (!geometry) continue;
+      const candidateDistance = distance(point, geometry.midpoint);
+      if (
+        candidateDistance <= 34 &&
+        (!nearest || candidateDistance < nearest.distance)
+      ) {
+        nearest = {
+          id: cell.id,
+          point: geometry.midpoint,
+          distance: candidateDistance,
+        };
+      }
+    }
+    if (nearest) return { kind: 'cell', id: nearest.id, point: nearest.point };
+  }
   const nodeId = hitNode(doc, point);
   if (nodeId) {
     const node = doc.nodes.find((item) => item.id === nodeId)!;
@@ -525,6 +548,9 @@ export function connectionValidationError(
     (source.kind === 'arrow' &&
       target.kind === 'arrow' &&
       source.id === target.id) ||
+    (source.kind === 'cell' &&
+      target.kind === 'cell' &&
+      source.id === target.id) ||
     (source.kind === 'point' &&
       target.kind === 'point' &&
       distance(source.point, target.point) < 1)
@@ -534,9 +560,24 @@ export function connectionValidationError(
   const mode = resolveConnectionLevel(requested, source.kind, target.kind);
   if (
     mode === 'arrow' &&
-    (source.kind === 'arrow' || target.kind === 'arrow')
+    (source.kind === 'arrow' ||
+      target.kind === 'arrow' ||
+      source.kind === 'cell' ||
+      target.kind === 'cell')
   ) {
     return 'A 1-cell needs object endpoints; choose 2-cell for an arrow attachment.';
+  }
+  if (
+    mode === 'cell' &&
+    (source.kind === 'cell' || target.kind === 'cell')
+  ) {
+    return 'A 2-cell cannot use a 2-cell as an endpoint; choose 3-cell.';
+  }
+  if (
+    mode === 'three' &&
+    (source.kind !== 'cell' || target.kind !== 'cell')
+  ) {
+    return 'A 3-cell needs two 2-cell endpoints.';
   }
   return null;
 }
@@ -545,10 +586,12 @@ function CellGlyph({
   geometry,
   head,
   stroke,
+  level = 2,
 }: {
   geometry: NonNullable<ReturnType<typeof getCellGeometry>>;
   head: 'arrow' | 'reverse' | 'none';
   stroke: 'solid' | 'dashed' | 'dotted' | 'none';
+  level?: 2 | 3;
 }) {
   const color = '#273244';
   const reverse = head === 'reverse';
@@ -611,8 +654,9 @@ function CellGlyph({
   };
   return (
     <>
-      {stroke !== 'none' && line(-2.6)}
-      {stroke !== 'none' && line(2.6)}
+      {stroke !== 'none' && line(-2.8)}
+      {stroke !== 'none' && level === 3 && line(0)}
+      {stroke !== 'none' && line(2.8)}
       {hasHead && (
         <path
           d={`M ${wingA.x} ${wingA.y} L ${tip.x} ${tip.y} L ${wingB.x} ${wingB.y}`}
@@ -871,13 +915,10 @@ export function DiagramCanvas({
       const cell = doc.cells.find((item) => item.id === gesture.cell);
       const geometry = cell ? getCellGeometry(doc, cell) : null;
       if (!cell || !geometry) return;
-      let curve =
-        Math.round(
-          ((point.x - geometry.baseMidpoint.x) * geometry.baseNormal.x +
-            (point.y - geometry.baseMidpoint.y) * geometry.baseNormal.y) /
-            2,
-        ) * 2;
-      curve = clamp(curve, -220, 220);
+      const curve = snapCurveLevel(
+        (point.x - geometry.baseMidpoint.x) * geometry.baseNormal.x +
+          (point.y - geometry.baseMidpoint.y) * geometry.baseNormal.y,
+      );
       setGesture({ ...gesture, curve, moved });
       return;
     }
@@ -899,11 +940,9 @@ export function DiagramCanvas({
       x: (geometry.start.x + geometry.end.x) / 2,
       y: (geometry.start.y + geometry.end.y) / 2,
     };
-    let curve =
-      Math.round(
-        ((point.x - base.x) * normal.x + (point.y - base.y) * normal.y) / 2,
-      ) * 2;
-    curve = clamp(curve, -220, 220);
+    let curve = snapCurveLevel(
+      (point.x - base.x) * normal.x + (point.y - base.y) * normal.y,
+    );
     curve = constrainArrowCurve(doc, arrow.id, curve);
     setGesture({ ...gesture, curve, moved });
   };
@@ -925,8 +964,13 @@ export function DiagramCanvas({
               { kind: 'node', id: completed.source.id },
               completed.additive,
             );
-        } else if (tool === 'cell') {
+        } else if (completed.source.kind === 'arrow' && tool === 'cell') {
           onArrowAction(completed.source.id);
+        } else if (completed.source.kind === 'cell') {
+          onSelect(
+            { kind: 'cell', id: completed.source.id },
+            completed.additive,
+          );
         } else {
           onSelect(
             { kind: 'arrow', id: completed.source.id },
@@ -939,6 +983,7 @@ export function DiagramCanvas({
         doc,
         completed.current,
         completed.source.kind === 'arrow' ? completed.source.id : undefined,
+        completed.source.kind === 'cell' ? completed.source.id : undefined,
       );
       const connectionError = connectionValidationError(
         completed.source,
@@ -953,7 +998,13 @@ export function DiagramCanvas({
                 '一胞腔的端点必须是对象；若要附着到箭头，请选择二胞腔。',
                 connectionError,
               )
-            : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
+            : connectionError.startsWith('A 3-cell')
+              ? ui(
+                  language,
+                  '三胞腔必须连接两个不同的二胞腔。',
+                  connectionError,
+                )
+              : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
         );
         return;
       }
@@ -1011,6 +1062,7 @@ export function DiagramCanvas({
           doc,
           gesture.current,
           gesture.source.kind === 'arrow' ? gesture.source.id : undefined,
+          gesture.source.kind === 'cell' ? gesture.source.id : undefined,
         )
       : null;
   const previewMode =
@@ -1376,24 +1428,34 @@ export function DiagramCanvas({
         })}
       </g>
 
-      <g aria-label="2-cells">
+      <g aria-label="higher cells">
         {previewDoc.cells.map((cell) => {
           const geometry = getCellGeometry(previewDoc, cell);
           if (!geometry) return null;
           const selected = selectedKeys.has(`cell:${cell.id}`);
+          const target =
+            connectTarget?.kind === 'cell' && connectTarget.id === cell.id;
           return (
             <g
               key={cell.id}
               tabIndex={0}
-              aria-label={`2-cell ${displayTex(cell.label)}`}
+              aria-label={`${cell.level ?? 2}-cell ${displayTex(cell.label)}`}
               className="cursor-pointer outline-none"
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
-                event.stopPropagation();
-                onSelect(
-                  { kind: 'cell', id: cell.id },
-                  additiveModifier(event),
-                );
+                if ((cell.level ?? 2) === 2) {
+                  beginConnect(event, {
+                    kind: 'cell',
+                    id: cell.id,
+                    point: geometry.midpoint,
+                  });
+                } else {
+                  event.stopPropagation();
+                  onSelect(
+                    { kind: 'cell', id: cell.id },
+                    additiveModifier(event),
+                  );
+                }
               }}
               onDoubleClick={(event) => {
                 event.preventDefault();
@@ -1415,13 +1477,13 @@ export function DiagramCanvas({
                 strokeWidth="22"
                 pointerEvents="stroke"
               />
-              {selected && (
+              {(selected || target) && (
                 <circle
                   cx={geometry.midpoint.x}
                   cy={geometry.midpoint.y}
                   r="27"
-                  fill="#8a4e75"
-                  opacity=".09"
+                  fill={target ? '#238060' : '#8a4e75'}
+                  opacity={target ? '.15' : '.09'}
                   pointerEvents="none"
                 />
               )}
@@ -1429,6 +1491,7 @@ export function DiagramCanvas({
                 geometry={geometry}
                 head={resolvedCellHead(cell)}
                 stroke={resolvedCellStroke(cell)}
+                level={cell.level ?? 2}
               />
               <MathLabel
                 tex={cell.label}
@@ -1930,6 +1993,16 @@ export function DiagramCanvas({
                 markerEnd="url(#xyq-canvas-arrow)"
                 opacity=".78"
               />
+              {previewMode === 'three' && (
+                <path
+                  d={`M ${gesture.source.point.x} ${gesture.source.point.y} L ${connectTarget.point.x} ${connectTarget.point.y}`}
+                  fill="none"
+                  stroke={connectionError ? '#b34b55' : '#273244'}
+                  strokeWidth="1.6"
+                  strokeDasharray="6 5"
+                  opacity=".78"
+                />
+              )}
             </>
           )}
           {connectTarget.kind === 'point' && (
@@ -1983,6 +2056,7 @@ export function canvasAnchorToCellAnchor(
   if (anchor.kind === 'arrow') {
     return { kind: 'arrow', id: anchor.id, t: anchor.t };
   }
+  if (anchor.kind === 'cell') return { kind: 'cell', id: anchor.id };
   return null;
 }
 

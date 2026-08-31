@@ -85,6 +85,7 @@ import {
   matrixAxes,
   resolveConnectionLevel,
   selectionKey,
+  snapCurveLevel,
   snapPointToMatrix,
   validateDocument,
   type ArrowId,
@@ -193,8 +194,13 @@ function anchorName(doc: DiagramDocument, anchor: CellAnchor | null) {
       doc.nodes.find((item) => item.id === anchor.id)?.label ?? 'object',
     );
   }
+  if (anchor.kind === 'arrow') {
+    return displayTex(
+      doc.arrows.find((item) => item.id === anchor.id)?.label ?? '1-cell',
+    );
+  }
   return displayTex(
-    doc.arrows.find((item) => item.id === anchor.id)?.label ?? '1-cell',
+    doc.cells.find((item) => item.id === anchor.id)?.label ?? '2-cell',
   );
 }
 
@@ -264,11 +270,15 @@ function Inspector({
               ? ui(language, '对象', 'Object')
               : arrow
                 ? ui(language, '一胞腔', '1-cell')
-                : ui(language, '二胞腔', '2-cell')}
+                : ui(
+                    language,
+                    `${cell?.level ?? 2}-胞腔`,
+                    `${cell?.level ?? 2}-cell`,
+                  )}
           </p>
         </div>
         <Badge variant="outline" className="font-mono">
-          {node ? '0' : arrow ? '1' : '2'}-cell
+          {node ? '0' : arrow ? '1' : (cell?.level ?? 2)}-cell
         </Badge>
       </div>
 
@@ -375,7 +385,7 @@ function Inspector({
               step={2}
               onValueChange={(value) => {
                 const next = Array.isArray(value) ? value[0] : value;
-                onPatchArrow(arrow.id, { curve: Number(next) });
+                onPatchArrow(arrow.id, { curve: snapCurveLevel(Number(next)) });
               }}
             />
           </div>
@@ -455,7 +465,11 @@ function Inspector({
           </div>
           <div className="space-y-2">
             <Label>
-              {ui(language, '二胞腔箭头样式', '2-cell arrow style')}
+              {ui(
+                language,
+                `${cell.level ?? 2}-胞腔箭头样式`,
+                `${cell.level ?? 2}-cell arrow style`,
+              )}
             </Label>
             <CellStylePopover
               cell={cell}
@@ -463,7 +477,15 @@ function Inspector({
             />
           </div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-950">
-            {isNativeParallelCell(doc, cell) ? (
+            {(cell.level ?? 2) === 3 ? (
+              <>
+                {ui(
+                  language,
+                  '以两个二胞腔为边界；Xy-pic 源码使用三重箭身表示',
+                  'Bounded by two 2-cells; Xy-pic source uses a triple shaft',
+                )}
+              </>
+            ) : isNativeParallelCell(doc, cell) ? (
               <>
                 {ui(language, '原生平行映射', 'Native parallel mapping')}：{' '}
                 <code className="font-mono">\\xtwocell</code>
@@ -541,6 +563,11 @@ function ExportDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    const loadingFrame = window.requestAnimationFrame(() => {
+      if (cancelled) return;
+      setSvgLoading(true);
+      setSvgError('');
+    });
     void renderXyPicSvg(nativeXy.text, {
       background,
       title: doc.title || 'XyQuiver diagram',
@@ -560,6 +587,7 @@ function ExportDialog({
       });
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(loadingFrame);
     };
   }, [background, doc.title, nativeXy.text, open]);
 
@@ -1121,8 +1149,23 @@ export function XyQuiverShell() {
     ) => {
       if (
         (item.kind === 'arrow' && level === 'arrow') ||
-        (item.kind === 'cell' && level === 'cell')
+        (item.kind === 'cell' &&
+          ((level === 'cell' &&
+            (doc.cells.find((cell) => cell.id === item.id)?.level ?? 2) === 2) ||
+            (level === 'three' &&
+              doc.cells.find((cell) => cell.id === item.id)?.level === 3)))
       ) {
+        return;
+      }
+
+      if (level === 'three') {
+        setStatus(
+          ui(
+            language,
+            '三胞腔需要两个二胞腔端点：请从一个二胞腔拖到另一个二胞腔。',
+            'A 3-cell needs two 2-cell endpoints: drag from one 2-cell to another.',
+          ),
+        );
         return;
       }
 
@@ -1188,6 +1231,16 @@ export function XyQuiverShell() {
 
       const cell = doc.cells.find((candidate) => candidate.id === item.id);
       if (!cell) return;
+      if ((cell.level ?? 2) === 3) {
+        setStatus(
+          ui(
+            language,
+            '三胞腔不能在不丢失二胞腔边界的情况下直接降阶。',
+            'A 3-cell cannot be lowered without discarding its 2-cell boundaries.',
+          ),
+        );
+        return;
+      }
       const sourceAnchor = cellSourceAnchor(cell);
       const targetAnchor = cellTargetAnchor(cell);
       let source: NodeId | null = null;
@@ -1447,13 +1500,35 @@ export function XyQuiverShell() {
                   : arrow,
             )
           : current.arrows;
+        const siblings = current.cells.filter((cell) => {
+          const cellSource = cellSourceAnchor(cell);
+          const cellTarget = cellTargetAnchor(cell);
+          return (
+            (cell.level ?? 2) === 2 &&
+            cellSource?.kind === 'arrow' &&
+            cellTarget?.kind === 'arrow' &&
+            cellSource.id === source.id &&
+            cellTarget.id === target.id
+          );
+        });
+        let cells = current.cells;
+        if (
+          siblings.length === 1 &&
+          Math.abs(siblings[0].curve ?? 0) < 1
+        ) {
+          cells = cells.map((cell) =>
+            cell.id === siblings[0].id ? { ...cell, curve: -45 } : cell,
+          );
+        }
+        const curveLevels = [0, 45, -70, 70, -100, 100, -140, 140];
         return {
           ...current,
           arrows,
           cells: [
-            ...current.cells,
+            ...cells,
             {
               id: nextId,
+              level: 2,
               sourceArrow: source.id,
               targetArrow: target.id,
               sourceAnchor: { kind: 'arrow', id: source.id, t: 0.5 },
@@ -1464,6 +1539,12 @@ export function XyQuiverShell() {
               color: '#273244',
               head: 'arrow',
               stroke: 'solid',
+              curve:
+                siblings.length === 0
+                  ? 0
+                  : curveLevels[
+                      Math.min(siblings.length, curveLevels.length - 1)
+                    ],
             },
           ],
         };
@@ -1569,7 +1650,13 @@ export function XyQuiverShell() {
                 '一胞腔的端点必须是对象；若要附着到箭头，请选择二胞腔。',
                 connectionError,
               )
-            : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
+            : connectionError.startsWith('A 3-cell')
+              ? ui(
+                  language,
+                  '三胞腔必须连接两个不同的二胞腔。',
+                  connectionError,
+                )
+              : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
         );
         return;
       }
@@ -1577,7 +1664,11 @@ export function XyQuiverShell() {
         anchor.kind === 'point' ||
         (anchor.kind === 'node'
           ? doc.nodes.some((node) => node.id === anchor.id)
-          : doc.arrows.some((arrow) => arrow.id === anchor.id));
+          : anchor.kind === 'arrow'
+            ? doc.arrows.some((arrow) => arrow.id === anchor.id)
+            : doc.cells.some(
+                (cell) => cell.id === anchor.id && (cell.level ?? 2) === 2,
+              ));
       if (!anchorExists(source) || !anchorExists(target)) {
         setStatus(
           ui(
@@ -1589,6 +1680,58 @@ export function XyQuiverShell() {
         return;
       }
       const mode = resolveConnectionLevel(requested, source.kind, target.kind);
+      if (mode === 'three') {
+        if (source.kind !== 'cell' || target.kind !== 'cell') return;
+        const nextId = makeId('cell');
+        const label = greekLabels[doc.cells.length % greekLabels.length];
+        commit((current) => {
+          const sourceCell = current.cells.find(
+            (cell) => cell.id === source.id && (cell.level ?? 2) === 2,
+          );
+          const targetCell = current.cells.find(
+            (cell) => cell.id === target.id && (cell.level ?? 2) === 2,
+          );
+          if (!sourceCell || !targetCell) return current;
+          const sameCurve =
+            Math.abs((sourceCell.curve ?? 0) - (targetCell.curve ?? 0)) < 1;
+          const cells = current.cells.map((cell) =>
+            sameCurve && cell.id === sourceCell.id
+              ? { ...cell, curve: -45 }
+              : sameCurve && cell.id === targetCell.id
+                ? { ...cell, curve: 45 }
+                : cell,
+          );
+          return {
+            ...current,
+            cells: [
+              ...cells,
+              {
+                id: nextId,
+                level: 3,
+                sourceAnchor: { kind: 'cell', id: sourceCell.id },
+                targetAnchor: { kind: 'cell', id: targetCell.id },
+                sourcePath: [],
+                targetPath: [],
+                label,
+                color: '#273244',
+                head: 'arrow',
+                stroke: 'solid',
+              },
+            ],
+          };
+        });
+        const nextSelection: Selection = { kind: 'cell', id: nextId };
+        setSelections([nextSelection]);
+        setEditing(nextSelection);
+        setStatus(
+          ui(
+            language,
+            `已创建三胞腔 ${displayTex(label)}。`,
+            `Created 3-cell ${displayTex(label)}.`,
+          ),
+        );
+        return;
+      }
       const newNodes: DiagramNode[] = [];
       const resolveNode = (
         anchor: CanvasAnchor,
@@ -1770,13 +1913,47 @@ export function XyQuiverShell() {
                   : arrow,
             )
           : current.arrows;
+        const sameAnchor = (left: CellAnchor, right: CellAnchor) =>
+          left.kind === right.kind &&
+          left.id === right.id &&
+          (left.kind !== 'arrow' ||
+            right.kind !== 'arrow' ||
+            Math.abs((left.t ?? 0.5) - (right.t ?? 0.5)) < 1e-6);
+        const siblings = current.cells.filter((cell) => {
+          if ((cell.level ?? 2) !== 2) return false;
+          const existingSource = cellSourceAnchor(cell);
+          const existingTarget = cellTargetAnchor(cell);
+          return Boolean(
+            existingSource &&
+              existingTarget &&
+              sameAnchor(existingSource, sourceAnchor) &&
+              sameAnchor(existingTarget, targetAnchor),
+          );
+        });
+        let cells = current.cells;
+        if (
+          siblings.length === 1 &&
+          Math.abs(siblings[0].curve ?? 0) < 1
+        ) {
+          cells = cells.map((cell) =>
+            cell.id === siblings[0].id ? { ...cell, curve: -45 } : cell,
+          );
+        }
+        const parallelCurveLevels = [0, 45, -70, 70, -100, 100, -140, 140];
+        const curve =
+          siblings.length === 0
+            ? 0
+            : parallelCurveLevels[
+                Math.min(siblings.length, parallelCurveLevels.length - 1)
+              ];
         return {
           ...withNodes,
           arrows,
           cells: [
-            ...current.cells,
+            ...cells,
             {
               id: nextId,
+              level: 2,
               sourceArrow: nativeParallel ? sourceArrow!.id : undefined,
               targetArrow: nativeParallel ? targetArrow!.id : undefined,
               sourceAnchor,
@@ -1787,6 +1964,7 @@ export function XyQuiverShell() {
               color: '#273244',
               head: 'arrow' as const,
               stroke: 'solid' as const,
+              curve,
             },
           ],
         };
@@ -2044,8 +2222,13 @@ export function XyQuiverShell() {
               {grid.columns.length}×{grid.rows.length}{' '}
               {ui(language, '矩阵', 'matrix')} · {doc.nodes.length}{' '}
               {ui(language, '个对象', 'objects')} · {doc.arrows.length}{' '}
-              {ui(language, '条箭头', 'arrows')} · {doc.cells.length}{' '}
-              {ui(language, '个二胞腔', '2-cells')}
+              {ui(language, '条箭头', 'arrows')} ·{' '}
+              {
+                doc.cells.filter((cell) => (cell.level ?? 2) === 2).length
+              }{' '}
+              {ui(language, '个二胞腔', '2-cells')} ·{' '}
+              {doc.cells.filter((cell) => cell.level === 3).length}{' '}
+              {ui(language, '个三胞腔', '3-cells')}
             </span>
           </div>
 

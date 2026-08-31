@@ -14,7 +14,7 @@ import {
 import { ui, useUiLanguage } from '@/lib/i18n';
 
 type LabelFace = 'math' | 'upright' | 'bold' | 'italic';
-type DrawLevel = 'auto' | 'arrow' | 'cell';
+type DrawLevel = 'auto' | 'arrow' | 'cell' | 'three';
 
 const faceCommands: Record<Exclude<LabelFace, 'math'>, string> = {
   upright: 'mathrm',
@@ -58,6 +58,7 @@ export function FloatingCellEditor({
   onPatchCell?: (patch: Partial<DiagramTwoCell>) => void;
 }) {
   const language = useUiLanguage();
+  const itemLevel = item.kind === 'arrow' ? 1 : (item.value.level ?? 2);
   const [draft, setDraft] = useState(item.value.label);
   const draftRef = useRef(item.value.label);
   const skipBlurCommit = useRef(false);
@@ -83,20 +84,18 @@ export function FloatingCellEditor({
         <div className="flex items-center gap-1.5">
           <span
             className={
-              item.kind === 'cell'
+              itemLevel >= 2
                 ? 'rounded bg-indigo-100 px-1.5 py-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-indigo-700'
                 : 'rounded bg-slate-100 px-1.5 py-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-600'
             }
           >
-            {item.kind === 'arrow'
-              ? ui(language, '1-胞腔', '1-CELL')
-              : ui(language, '2-胞腔', '2-CELL')}
+            {ui(language, `${itemLevel}-胞腔`, `${itemLevel}-CELL`)}
           </span>
           <Input
             aria-label={ui(
               language,
-              `编辑${item.kind === 'arrow' ? '一胞腔' : '二胞腔'}的 LaTeX 标签`,
-              `Edit ${item.kind === 'arrow' ? '1-cell' : '2-cell'} LaTeX label`,
+              `编辑${itemLevel === 1 ? '一' : itemLevel === 2 ? '二' : '三'}胞腔的 LaTeX 标签`,
+              `Edit ${itemLevel}-cell LaTeX label`,
             )}
             title={ui(
               language,
@@ -216,13 +215,13 @@ export function FloatingCellEditor({
           <Button
             type="button"
             size="xs"
-            variant={item.kind === 'arrow' ? 'secondary' : 'ghost'}
+            variant={itemLevel === 1 ? 'secondary' : 'ghost'}
             className={
-              item.kind === 'arrow'
+              itemLevel === 1
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : undefined
             }
-            aria-pressed={item.kind === 'arrow'}
+            aria-pressed={itemLevel === 1}
             title={ui(
               language,
               '将当前所选内容转换为一胞腔',
@@ -230,7 +229,7 @@ export function FloatingCellEditor({
             )}
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => {
-              if (item.kind === 'arrow') {
+              if (itemLevel === 1) {
                 commit();
                 return;
               }
@@ -243,13 +242,13 @@ export function FloatingCellEditor({
           <Button
             type="button"
             size="xs"
-            variant={item.kind === 'cell' ? 'secondary' : 'ghost'}
+            variant={itemLevel === 2 ? 'secondary' : 'ghost'}
             className={
-              item.kind === 'cell'
+              itemLevel === 2
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                 : undefined
             }
-            aria-pressed={item.kind === 'cell'}
+            aria-pressed={itemLevel === 2}
             title={ui(
               language,
               '将当前所选内容转换为二胞腔',
@@ -257,7 +256,7 @@ export function FloatingCellEditor({
             )}
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => {
-              if (item.kind === 'cell') {
+              if (itemLevel === 2) {
                 commit();
                 return;
               }
@@ -266,6 +265,33 @@ export function FloatingCellEditor({
             }}
           >
             {ui(language, '2-胞腔', '2-cell')}
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant={itemLevel === 3 ? 'secondary' : 'ghost'}
+            className={
+              itemLevel === 3
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : undefined
+            }
+            aria-pressed={itemLevel === 3}
+            title={ui(
+              language,
+              '三胞腔以两个二胞腔为端点；请从一个二胞腔拖到另一个。',
+              'A 3-cell connects two 2-cells; drag from one 2-cell to another.',
+            )}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (itemLevel === 3) {
+                commit();
+                return;
+              }
+              onPreviewLabel(null);
+              onChangeLevel('three', draftRef.current);
+            }}
+          >
+            {ui(language, '3-胞腔', '3-cell')}
           </Button>
         </div>
 

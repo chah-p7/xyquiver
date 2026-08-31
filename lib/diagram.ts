@@ -8,8 +8,8 @@ export type ArrowTail = 'none' | 'hook' | 'mapsto';
 export type LabelSide = 'left' | 'right';
 export type CellHead = 'arrow' | 'reverse' | 'equality' | 'none';
 export type CellStroke = 'solid' | 'dashed' | 'dotted' | 'none';
-export type ConnectionLevel = 'auto' | 'arrow' | 'cell';
-export type ConnectionAnchorKind = 'point' | 'node' | 'arrow';
+export type ConnectionLevel = 'auto' | 'arrow' | 'cell' | 'three';
+export type ConnectionAnchorKind = 'point' | 'node' | 'arrow' | 'cell';
 
 export interface Point {
   x: number;
@@ -39,10 +39,13 @@ export interface DiagramArrow {
 
 export type CellAnchor =
   | { kind: 'node'; id: NodeId }
-  | { kind: 'arrow'; id: ArrowId; t?: number };
+  | { kind: 'arrow'; id: ArrowId; t?: number }
+  | { kind: 'cell'; id: CellId };
 
 export interface DiagramTwoCell {
   id: CellId;
+  /** Omitted in legacy documents; defaults to 2. */
+  level?: 2 | 3;
   /** Legacy/native parallel-boundary representation. */
   sourceArrow?: ArrowId;
   targetArrow?: ArrowId;
@@ -120,6 +123,15 @@ export interface ExportResult {
 export const SCENE_WIDTH = 1000;
 export const SCENE_HEIGHT = 650;
 export const SNAP = 40;
+export const CURVE_SNAP_LEVELS = [
+  -220, -180, -140, -100, -70, -45, 0, 45, 70, 100, 140, 180, 220,
+] as const;
+
+export function snapCurveLevel(value: number): number {
+  return CURVE_SNAP_LEVELS.reduce((best, candidate) =>
+    Math.abs(candidate - value) < Math.abs(best - value) ? candidate : best,
+  );
+}
 export const DEFAULT_MATRIX_GRID: DiagramGrid = {
   columns: [80, 280, 480, 680, 880],
   rows: [80, 200, 320, 440, 560],
@@ -336,19 +348,29 @@ export function matrixAxes(
   return { columns, rows };
 }
 
+const XY_GRID_UNIT_PC = 0.3;
+
+function filledLogicalAxis(values: number[]): number[] {
+  const points = [...new Set(values)]
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+  if (points.length < 2) return points;
+  const start = snap(points[0]);
+  const end = snap(points.at(-1)!);
+  const filled: number[] = [];
+  for (let value = start; value <= end; value += SNAP) filled.push(value);
+  return [...new Set([...filled, ...points])].sort((left, right) => left - right);
+}
+
 /**
- * Xy-pic works on a logical matrix, not editor pixels. Only occupied object
- * rows and columns belong in the exported matrix: empty screen snap points
- * must not turn a two-column diagram into a twenty-column diagram.
+ * Every visible editor grid centre is one Xy-pic logical step. Moving an
+ * object by one snap cell therefore changes the generated hop by exactly one
+ * u/d/l/r, while a small typographic cell size keeps long arrows in scale.
  */
 export function exportMatrixAxes(doc: DiagramDocument): DiagramGrid {
   return {
-    columns: [...new Set(doc.nodes.map((node) => node.x))]
-      .filter(Number.isFinite)
-      .sort((left, right) => left - right),
-    rows: [...new Set(doc.nodes.map((node) => node.y))]
-      .filter(Number.isFinite)
-      .sort((top, bottom) => top - bottom),
+    columns: filledLogicalAxis(doc.nodes.map((node) => node.x)),
+    rows: filledLogicalAxis(doc.nodes.map((node) => node.y)),
   };
 }
 
@@ -457,6 +479,7 @@ export function resolveConnectionLevel(
   target: ConnectionAnchorKind,
 ): Exclude<ConnectionLevel, 'auto'> {
   if (requested !== 'auto') return requested;
+  if (source === 'cell' || target === 'cell') return 'three';
   return source === 'arrow' || target === 'arrow' ? 'cell' : 'arrow';
 }
 
@@ -701,6 +724,9 @@ export function inferCellBoundaryPaths(
   source: CellAnchor,
   target: CellAnchor,
 ) {
+  if (source.kind === 'cell' || target.kind === 'cell') {
+    return { source: [], target: [] };
+  }
   if (source.kind === 'arrow' && target.kind === 'arrow') {
     const sourceArrow = doc.arrows.find((item) => item.id === source.id);
     const targetArrow = doc.arrows.find((item) => item.id === target.id);
@@ -732,6 +758,11 @@ export function anchorPoint(
   if (anchor.kind === 'node') {
     const node = doc.nodes.find((item) => item.id === anchor.id);
     return node ? { x: node.x, y: node.y } : null;
+  }
+  if (anchor.kind === 'cell') {
+    const cell = doc.cells.find((item) => item.id === anchor.id);
+    if (!cell || (cell.level ?? 2) !== 2) return null;
+    return getCellGeometry(doc, cell)?.midpoint ?? null;
   }
   const arrow = doc.arrows.find((item) => item.id === anchor.id);
   const geometry = arrow ? getArrowGeometry(doc, arrow) : null;
@@ -815,12 +846,16 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
   }
   const chordDirection = normalize({ x: to.x - from.x, y: to.y - from.y });
   const start = {
-    x: from.x + chordDirection.x * (sourceAnchor.kind === 'arrow' ? 5 : 0),
-    y: from.y + chordDirection.y * (sourceAnchor.kind === 'arrow' ? 5 : 0),
+    x:
+      from.x +
+      chordDirection.x * (sourceAnchor.kind === 'node' ? 0 : 5),
+    y:
+      from.y +
+      chordDirection.y * (sourceAnchor.kind === 'node' ? 0 : 5),
   };
   const end = {
-    x: to.x - chordDirection.x * (targetAnchor.kind === 'arrow' ? 5 : 0),
-    y: to.y - chordDirection.y * (targetAnchor.kind === 'arrow' ? 5 : 0),
+    x: to.x - chordDirection.x * (targetAnchor.kind === 'node' ? 0 : 5),
+    y: to.y - chordDirection.y * (targetAnchor.kind === 'node' ? 0 : 5),
   };
   const baseMidpoint = {
     x: (start.x + end.x) / 2,
@@ -872,6 +907,7 @@ export function isNativeParallelCell(
   doc: DiagramDocument,
   cell: DiagramTwoCell,
 ): boolean {
+  if ((cell.level ?? 2) !== 2) return false;
   const source = cellSourceAnchor(cell);
   const target = cellTargetAnchor(cell);
   if (
@@ -904,57 +940,19 @@ export function isNativeParallelCell(
   );
 }
 
-function comparableAnchorKey(anchor: CellAnchor): string {
-  return anchor.kind === 'arrow'
-    ? `arrow:${anchor.id}:${round(anchor.t ?? 0.5)}`
-    : `node:${anchor.id}`;
-}
-
 export type CellCreationConflict =
   | 'duplicate'
   | 'shared-native-boundary'
   | null;
 
 export function cellCreationConflict(
-  doc: DiagramDocument,
-  source: CellAnchor,
-  target: CellAnchor,
+  _doc: DiagramDocument,
+  _source: CellAnchor,
+  _target: CellAnchor,
 ): CellCreationConflict {
-  const sourceKey = comparableAnchorKey(source);
-  const targetKey = comparableAnchorKey(target);
-  for (const cell of doc.cells) {
-    const existingSource = cellSourceAnchor(cell);
-    const existingTarget = cellTargetAnchor(cell);
-    if (!existingSource || !existingTarget) continue;
-    const existingSourceKey = comparableAnchorKey(existingSource);
-    const existingTargetKey = comparableAnchorKey(existingTarget);
-    if (
-      (existingSourceKey === sourceKey && existingTargetKey === targetKey) ||
-      (existingSourceKey === targetKey && existingTargetKey === sourceKey)
-    ) {
-      return 'duplicate';
-    }
-  }
-
-  if (source.kind !== 'arrow' || target.kind !== 'arrow') return null;
-  const sourceArrow = doc.arrows.find((arrow) => arrow.id === source.id);
-  const targetArrow = doc.arrows.find((arrow) => arrow.id === target.id);
-  if (!sourceArrow || !targetArrow || !areParallel(sourceArrow, targetArrow)) {
-    return null;
-  }
-  return doc.cells.some((cell) => {
-    if (!isNativeParallelCell(doc, cell)) return false;
-    const existingSource = cellSourceAnchor(cell);
-    const existingTarget = cellTargetAnchor(cell);
-    return (
-      (existingSource?.kind === 'arrow' &&
-        (existingSource.id === source.id || existingSource.id === target.id)) ||
-      (existingTarget?.kind === 'arrow' &&
-        (existingTarget.id === source.id || existingTarget.id === target.id))
-    );
-  })
-    ? 'shared-native-boundary'
-    : null;
+  // Parallel higher cells are legitimate data: two 2-cells with the same
+  // boundary can themselves be the source and target of a 3-cell.
+  return null;
 }
 
 export function constrainArrowCurve(
@@ -983,18 +981,11 @@ export function constrainArrowCurve(
       : null;
     return partner ? [partner.curve] : [];
   });
-  const raw = Math.min(
-    maximum,
-    Math.max(minimum, Math.round(requested / 2) * 2),
-  );
+  const raw = Math.min(maximum, Math.max(minimum, snapCurveLevel(requested)));
   const valid = (candidate: number) =>
     partnerCurves.every((curve) => Math.abs(candidate - curve) >= gap);
   if (valid(raw)) return raw;
-  const candidates = [
-    minimum,
-    maximum,
-    ...partnerCurves.flatMap((curve) => [curve - gap, curve + gap]),
-  ].filter(
+  const candidates = CURVE_SNAP_LEVELS.filter(
     (candidate) =>
       candidate >= minimum && candidate <= maximum && valid(candidate),
   );
@@ -1166,6 +1157,22 @@ export function deleteSelections(
       cellIds.add(cell.id);
     }
   }
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const cell of doc.cells) {
+      if (cellIds.has(cell.id)) continue;
+      const source = cellSourceAnchor(cell);
+      const target = cellTargetAnchor(cell);
+      if (
+        (source?.kind === 'cell' && cellIds.has(source.id)) ||
+        (target?.kind === 'cell' && cellIds.has(target.id))
+      ) {
+        cellIds.add(cell.id);
+        grew = true;
+      }
+    }
+  }
   return {
     ...doc,
     nodes: doc.nodes.filter((node) => !nodeIds.has(node.id)),
@@ -1178,55 +1185,7 @@ export function deleteSelection(
   doc: DiagramDocument,
   selection: Selection,
 ): DiagramDocument {
-  if (selection.kind === 'cell') {
-    return {
-      ...doc,
-      cells: doc.cells.filter((cell) => cell.id !== selection.id),
-    };
-  }
-  if (selection.kind === 'arrow') {
-    return {
-      ...doc,
-      arrows: doc.arrows.filter((arrow) => arrow.id !== selection.id),
-      cells: doc.cells.filter((cell) => {
-        const source = cellSourceAnchor(cell);
-        const target = cellTargetAnchor(cell);
-        const paths = cellBoundaryPaths(cell);
-        return !(
-          (source?.kind === 'arrow' && source.id === selection.id) ||
-          (target?.kind === 'arrow' && target.id === selection.id) ||
-          paths.source.includes(selection.id) ||
-          paths.target.includes(selection.id)
-        );
-      }),
-    };
-  }
-  const arrowIds = new Set(
-    doc.arrows
-      .filter(
-        (arrow) =>
-          arrow.source === selection.id || arrow.target === selection.id,
-      )
-      .map((arrow) => arrow.id),
-  );
-  return {
-    ...doc,
-    nodes: doc.nodes.filter((node) => node.id !== selection.id),
-    arrows: doc.arrows.filter((arrow) => !arrowIds.has(arrow.id)),
-    cells: doc.cells.filter((cell) => {
-      const source = cellSourceAnchor(cell);
-      const target = cellTargetAnchor(cell);
-      const paths = cellBoundaryPaths(cell);
-      return !(
-        (source?.kind === 'node' && source.id === selection.id) ||
-        (target?.kind === 'node' && target.id === selection.id) ||
-        (source?.kind === 'arrow' && arrowIds.has(source.id)) ||
-        (target?.kind === 'arrow' && arrowIds.has(target.id)) ||
-        paths.source.some((id) => arrowIds.has(id)) ||
-        paths.target.some((id) => arrowIds.has(id))
-      );
-    }),
-  };
+  return deleteSelections(doc, [selection]);
 }
 
 function round(value: number): number {
@@ -1412,7 +1371,10 @@ export function generateSvg(
           : `<path d="M ${round(wingA.x)} ${round(wingA.y)} L ${round(tip.x)} ${round(tip.y)} L ${round(wingB.x)} ${round(wingB.y)}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
       const labelX = geometry.midpoint.x + geometry.normal.x * 20;
       const labelY = geometry.midpoint.y + geometry.normal.y * 20;
-      const shaft = stroke === 'none' ? '' : `${line(-2.6)}${line(2.6)}`;
+      const shaft =
+        stroke === 'none'
+          ? ''
+          : `${line(-2.8)}${(cell.level ?? 2) === 3 ? line(0) : ''}${line(2.8)}`;
       return `${shaft}${head}<text x="${round(labelX)}" y="${round(labelY)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(cell.label))}</text>`;
     })
     .join('');
@@ -1476,8 +1438,8 @@ function arrowXyCommand(
     Math.abs(arrow.curve) < 8
       ? ''
       : arrow.curve > 0
-        ? `@/^${round(Math.abs(arrow.curve) / 45)}em/`
-        : `@/_${round(Math.abs(arrow.curve) / 45)}em/`;
+        ? `@/^${round((Math.abs(arrow.curve) / SNAP) * XY_GRID_UNIT_PC)}pc/`
+        : `@/_${round((Math.abs(arrow.curve) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
   const isDefaultStyle =
     arrow.stroke === 'solid' && arrow.head === 'arrow' && arrow.tail === 'none';
   const tail =
@@ -1493,8 +1455,14 @@ function arrowXyCommand(
   const head =
     arrow.head === 'twohead' ? '>>' : arrow.head === 'arrow' ? '>' : '';
   const style = isDefaultStyle ? '' : `@{${tail}${body}${head}}`;
+  const labelPosition = Math.min(
+    0.95,
+    Math.max(0.05, arrow.labelPosition ?? 0.5),
+  );
+  const labelPlace =
+    Math.abs(labelPosition - 0.5) < 0.001 ? '' : `(${round(labelPosition)})`;
   const label = arrow.label
-    ? `${arrow.labelSide === 'left' ? '^' : '_'}{${safeTex(arrow.label)}}`
+    ? `${arrow.labelSide === 'left' ? '^' : '_'}${labelPlace}{${safeTex(arrow.label)}}`
     : '';
   const visible = `\\ar${curve}${style}[${hop}]${label}`;
   // A | break placed on the visible arrow can erase a stretch of its shaft.
@@ -1529,8 +1497,37 @@ export function generateXyPic(
   const ys = axes.rows;
   const commands = new Map<NodeId, string[]>();
   const consumedArrows = new Set<ArrowId>();
-  const nativeBoundaryOwners = new Map<ArrowId, CellId>();
   let nativeCellCount = 0;
+  const threeCells = doc.cells.filter((cell) => (cell.level ?? 2) === 3);
+  const cellsUsedByThreeCells = new Set(
+    threeCells.flatMap((cell) => {
+      const source = cellSourceAnchor(cell);
+      const target = cellTargetAnchor(cell);
+      return [source, target].flatMap((anchor) =>
+        anchor?.kind === 'cell' ? [anchor.id] : [],
+      );
+    }),
+  );
+  const nativePairCounts = new Map<string, number>();
+  for (const cell of doc.cells) {
+    if (!isNativeParallelCell(doc, cell)) continue;
+    const source = cellSourceAnchor(cell);
+    const target = cellTargetAnchor(cell);
+    if (source?.kind !== 'arrow' || target?.kind !== 'arrow') continue;
+    const key = [source.id, target.id].sort().join('|');
+    nativePairCounts.set(key, (nativePairCounts.get(key) ?? 0) + 1);
+  }
+  const nativeCellIds = new Set(
+    doc.cells.flatMap((cell) => {
+      if (!isNativeParallelCell(doc, cell) || cellsUsedByThreeCells.has(cell.id))
+        return [];
+      const source = cellSourceAnchor(cell);
+      const target = cellTargetAnchor(cell);
+      if (source?.kind !== 'arrow' || target?.kind !== 'arrow') return [];
+      const key = [source.id, target.id].sort().join('|');
+      return nativePairCounts.get(key) === 1 ? [cell.id] : [];
+    }),
+  );
 
   for (const cell of doc.cells) {
     const sourceAnchor = cellSourceAnchor(cell);
@@ -1541,7 +1538,7 @@ export function generateXyPic(
       );
       continue;
     }
-    if (!isNativeParallelCell(doc, cell)) continue;
+    if (!nativeCellIds.has(cell.id)) continue;
     const sourceArrow = doc.arrows.find(
       (arrow) => arrow.id === sourceAnchor.id,
     );
@@ -1549,15 +1546,6 @@ export function generateXyPic(
       (arrow) => arrow.id === targetAnchor.id,
     );
     if (!sourceArrow || !targetArrow) continue;
-    const owner =
-      nativeBoundaryOwners.get(sourceArrow.id) ??
-      nativeBoundaryOwners.get(targetArrow.id);
-    if (owner) {
-      warnings.push(
-        `2-cell ${cell.label || cell.id} shares a native boundary with ${owner} and was omitted.`,
-      );
-      continue;
-    }
     const sourceNode = doc.nodes.find((node) => node.id === sourceArrow.source);
     const targetNode = doc.nodes.find((node) => node.id === sourceArrow.target);
     if (!sourceNode || !targetNode) continue;
@@ -1606,8 +1594,6 @@ export function generateXyPic(
       ...(commands.get(sourceNode.id) ?? []),
       command,
     ]);
-    nativeBoundaryOwners.set(sourceArrow.id, cell.id);
-    nativeBoundaryOwners.set(targetArrow.id, cell.id);
     consumedArrows.add(sourceArrow.id);
     consumedArrows.add(targetArrow.id);
     nativeCellCount += 1;
@@ -1626,6 +1612,7 @@ export function generateXyPic(
       const column = xs.indexOf(node.x);
       return row >= 0 && column >= 0 ? `${row + 1},${column + 1}` : null;
     }
+    if (anchor.kind === 'cell') return null;
     const arrow = doc.arrows.find((item) => item.id === anchor.id);
     if (
       !arrow ||
@@ -1651,8 +1638,10 @@ export function generateXyPic(
   };
 
   const generalCellCommands: string[] = [];
+  const cellAnchorAliases = new Map<CellId, string>();
+  let cellAnchorIndex = 0;
   for (const cell of doc.cells) {
-    if (isNativeParallelCell(doc, cell)) continue;
+    if ((cell.level ?? 2) !== 2 || nativeCellIds.has(cell.id)) continue;
     const sourceAnchor = cellSourceAnchor(cell);
     const targetAnchor = cellTargetAnchor(cell);
     if (!sourceAnchor || !targetAnchor) continue;
@@ -1707,8 +1696,49 @@ export function generateXyPic(
       Math.abs(cell.curve ?? 0) < 1
         ? ''
         : (cell.curve ?? 0) > 0
-          ? `@/^${round(Math.abs(cell.curve ?? 0) / 45)}em/`
-          : `@/_${round(Math.abs(cell.curve ?? 0) / 45)}em/`;
+          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`
+          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
+    generalCellCommands.push(
+      `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${label}`,
+    );
+    if (cellsUsedByThreeCells.has(cell.id)) {
+      const alias = `xyq-c${++cellAnchorIndex}`;
+      cellAnchorAliases.set(cell.id, alias);
+      generalCellCommands.push(
+        `\\POS "${sourceAlias}" \\ar${curve}@{} "${targetAlias}"|(.5)*{}="${alias}"`,
+      );
+    }
+  }
+
+  for (const cell of threeCells) {
+    const source = cellSourceAnchor(cell);
+    const target = cellTargetAnchor(cell);
+    const sourceAlias =
+      source?.kind === 'cell' ? cellAnchorAliases.get(source.id) : null;
+    const targetAlias =
+      target?.kind === 'cell' ? cellAnchorAliases.get(target.id) : null;
+    if (!sourceAlias || !targetAlias) {
+      warnings.push(
+        `3-cell ${cell.label || cell.id} could not name one of its 2-cell boundaries and was omitted.`,
+      );
+      continue;
+    }
+    const curve =
+      Math.abs(cell.curve ?? 0) < 1
+        ? ''
+        : (cell.curve ?? 0) > 0
+          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`
+          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
+    const direction = resolvedCellHead(cell);
+    const style =
+      resolvedCellStroke(cell) === 'none'
+        ? '@{}'
+        : direction === 'reverse'
+          ? '@{<==}'
+          : direction === 'none'
+            ? '@{===}'
+            : '@{==>}';
+    const label = cell.label ? `^(.35){${safeTex(cell.label)}}` : '';
     generalCellCommands.push(
       `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${label}`,
     );
@@ -1749,8 +1779,8 @@ export function generateXyPic(
     generalCellCommands.length > 0 ? `\n${generalCellCommands.join('\n')}` : '';
   // Xy-pic row/column spacing is typographic. It must not be inferred from
   // browser pixels; doing so makes Typora arrows huge compared with glyphs.
-  const columnSpacing = 2.8;
-  const rowSpacing = 1.9;
+  const columnSpacing = XY_GRID_UNIT_PC;
+  const rowSpacing = XY_GRID_UNIT_PC;
   const core = `\\begin{xy}\n${initializer}\\xymatrix @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
   return wrap(core);
 }
@@ -1923,11 +1953,33 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     ],
     cells: [
       {
-        id: 'c-rho',
+        id: 'c-rho-upper',
+        level: 2,
         sourceArrow: 'a-rho1',
         targetArrow: 'a-rho1p',
+        label: '',
+        color: '#273244',
+        curve: -70,
+      },
+      {
+        id: 'c-rho-lower',
+        level: 2,
+        sourceArrow: 'a-rho1',
+        targetArrow: 'a-rho1p',
+        label: '',
+        color: '#273244',
+        curve: 70,
+      },
+      {
+        id: 'c-rho-three',
+        level: 3,
+        sourceAnchor: { kind: 'cell', id: 'c-rho-upper' },
+        targetAnchor: { kind: 'cell', id: 'c-rho-lower' },
+        sourcePath: [],
+        targetPath: [],
         label: '\\rho_0',
         color: '#273244',
+        head: 'reverse',
       },
     ],
   },
@@ -2156,12 +2208,13 @@ export function validateDocument(value: unknown): DiagramDocument | null {
     const anchor = asRecord(rawAnchor);
     if (
       !anchor ||
-      (anchor.kind !== 'node' && anchor.kind !== 'arrow') ||
+      !['node', 'arrow', 'cell'].includes(anchor.kind as string) ||
       typeof anchor.id !== 'string'
     ) {
       return invalidAnchor;
     }
     if (anchor.kind === 'node') return { kind: 'node', id: anchor.id };
+    if (anchor.kind === 'cell') return { kind: 'cell', id: anchor.id };
     if (
       anchor.t !== undefined &&
       (!Number.isFinite(anchor.t) ||
@@ -2198,6 +2251,7 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       typeof item.id !== 'string' ||
       typeof item.label !== 'string' ||
       typeof item.color !== 'string' ||
+      (item.level !== undefined && item.level !== 2 && item.level !== 3) ||
       (item.sourceArrow !== undefined &&
         typeof item.sourceArrow !== 'string') ||
       (item.targetArrow !== undefined &&
@@ -2265,6 +2319,7 @@ export function validateDocument(value: unknown): DiagramDocument | null {
           : []);
     cells.push({
       id: item.id,
+      level: (item.level as 2 | 3 | undefined) ?? 2,
       ...(sourceArrow ? { sourceArrow } : {}),
       ...(targetArrow ? { targetArrow } : {}),
       sourceAnchor,
@@ -2312,6 +2367,7 @@ export function validateDocument(value: unknown): DiagramDocument | null {
   }
   const nodeIds = new Set(nodes.map((node) => node.id));
   const arrowById = new Map(arrows.map((arrow) => [arrow.id, arrow]));
+  const cellById = new Map(cells.map((cell) => [cell.id, cell]));
   if (
     arrows.some(
       (arrow) =>
@@ -2351,7 +2407,11 @@ export function validateDocument(value: unknown): DiagramDocument | null {
     };
   };
   const anchorExists = (anchor: CellAnchor) =>
-    anchor.kind === 'node' ? nodeIds.has(anchor.id) : arrowById.has(anchor.id);
+    anchor.kind === 'node'
+      ? nodeIds.has(anchor.id)
+      : anchor.kind === 'arrow'
+        ? arrowById.has(anchor.id)
+        : cellById.has(anchor.id);
   const anchorBelongs = (
     anchor: CellAnchor,
     path: ArrowId[],
@@ -2359,8 +2419,9 @@ export function validateDocument(value: unknown): DiagramDocument | null {
   ) =>
     anchor.kind === 'arrow'
       ? path.includes(anchor.id)
-      : info.vertices.includes(anchor.id);
-  const cellPairs = new Set<string>();
+      : anchor.kind === 'node'
+        ? info.vertices.includes(anchor.id)
+        : false;
   for (const cell of cells) {
     const sourceAnchor = cellSourceAnchor(cell);
     const targetAnchor = cellTargetAnchor(cell);
@@ -2369,6 +2430,19 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       !targetAnchor ||
       !anchorExists(sourceAnchor) ||
       !anchorExists(targetAnchor)
+    ) {
+      return null;
+    }
+    const level = cell.level ?? 2;
+    if (
+      (level === 2 &&
+        (sourceAnchor.kind === 'cell' || targetAnchor.kind === 'cell')) ||
+      (level === 3 &&
+        (sourceAnchor.kind !== 'cell' ||
+          targetAnchor.kind !== 'cell' ||
+          sourceAnchor.id === targetAnchor.id ||
+          (cellById.get(sourceAnchor.id)?.level ?? 2) !== 2 ||
+          (cellById.get(targetAnchor.id)?.level ?? 2) !== 2))
     ) {
       return null;
     }
@@ -2402,24 +2476,6 @@ export function validateDocument(value: unknown): DiagramDocument | null {
     ) {
       return null;
     }
-    const pair = [
-      comparableAnchorKey(sourceAnchor),
-      comparableAnchorKey(targetAnchor),
-    ]
-      .sort()
-      .join('|');
-    if (cellPairs.has(pair)) return null;
-    cellPairs.add(pair);
-  }
-  const nativeOwners = new Set<ArrowId>();
-  for (const cell of cells) {
-    if (!isNativeParallelCell(document, cell)) continue;
-    const source = cellSourceAnchor(cell);
-    const target = cellTargetAnchor(cell);
-    if (source?.kind !== 'arrow' || target?.kind !== 'arrow') return null;
-    if (nativeOwners.has(source.id) || nativeOwners.has(target.id)) return null;
-    nativeOwners.add(source.id);
-    nativeOwners.add(target.id);
   }
   return cloneDocument(document);
 }
