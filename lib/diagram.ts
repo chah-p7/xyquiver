@@ -364,10 +364,13 @@ export function matrixAxes(
   return { columns, rows };
 }
 
-// One editor cell is only a little wider than a normal math glyph. Keeping
-// this typographic (rather than pixel-derived) preserves the canvas ratio in
-// Typora and in the native XyJax SVG renderer.
-const XY_GRID_UNIT_PC = 1.2;
+// Xy-pic adds different built-in horizontal and vertical padding around every
+// matrix entry. These calibrated additions make one empty logical cell about
+// 1.6 math em in either direction: a little wider than a glyph, without
+// letting long arrows dominate the object labels in Typora or exported SVG.
+const XY_COLUMN_GRID_UNIT_PC = 0.75;
+const XY_ROW_GRID_UNIT_PC = 0.5;
+const XY_CURVE_UNIT_PC = 0.625;
 
 function filledLogicalAxis(values: number[]): number[] {
   const points = [...new Set(values)]
@@ -1494,8 +1497,8 @@ function arrowXyCommand(
     Math.abs(arrow.curve) < 8
       ? ''
       : arrow.curve > 0
-        ? `@/^${round((Math.abs(arrow.curve) / SNAP) * XY_GRID_UNIT_PC)}pc/`
-        : `@/_${round((Math.abs(arrow.curve) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
+        ? `@/^${round((Math.abs(arrow.curve) / SNAP) * XY_CURVE_UNIT_PC)}pc/`
+        : `@/_${round((Math.abs(arrow.curve) / SNAP) * XY_CURVE_UNIT_PC)}pc/`;
   const isDefaultStyle =
     arrow.stroke === 'solid' && arrow.head === 'arrow' && arrow.tail === 'none';
   const tail =
@@ -1790,8 +1793,8 @@ export function generateXyPic(
       Math.abs(cell.curve ?? 0) < 1
         ? ''
         : (cell.curve ?? 0) > 0
-          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`
-          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_GRID_UNIT_PC)}pc/`;
+          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_PC)}pc/`
+          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_PC)}pc/`;
     generalCellCommands.push(
       `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${usesCellAnchor ? label : ''}`,
     );
@@ -1844,8 +1847,8 @@ export function generateXyPic(
     generalCellCommands.length > 0 ? `\n${generalCellCommands.join('\n')}` : '';
   // Xy-pic row/column spacing is typographic. It must not be inferred from
   // browser pixels; doing so makes Typora arrows huge compared with glyphs.
-  const columnSpacing = XY_GRID_UNIT_PC;
-  const rowSpacing = XY_GRID_UNIT_PC;
+  const columnSpacing = XY_COLUMN_GRID_UNIT_PC;
+  const rowSpacing = XY_ROW_GRID_UNIT_PC;
   const core = `\\begin{xy}\n${initializer}\\xymatrix @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
   return wrap(core);
 }

@@ -196,7 +196,7 @@ if (
   !anchoredParallelXy.includes("=C+d\\rho'_2}\\phantom{C}") ||
   anchoredParallelXy.includes('\\hbox{\\rlap') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  (anchoredParallelXy.match(/\\ar@\/[\^_]2\.1pc\/@\{=>\}/g) ?? [])
+  (anchoredParallelXy.match(/\\ar@\/[\^_]1\.09pc\/@\{=>\}/g) ?? [])
     .length !== 2 ||
   !anchoredParallelXy.includes('\\ar@{<=}') ||
   !anchoredParallelXy.includes('{\\rho_0}')
@@ -248,7 +248,7 @@ if (
   connectingMap.curve !== 180 ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@C=1.2pc @R=1.2pc') ||
+  !homotopyXy.includes('@C=0.75pc @R=0.5pc') ||
   !homotopyXy.includes(
     `\\ar[${'r'.repeat(20)}]^{\\overset`,
   ) ||

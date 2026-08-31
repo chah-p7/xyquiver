@@ -134,6 +134,7 @@ const examples = [
 ] as const;
 
 const storageKey = 'xyquiver:document:v4';
+const snakeDeltaMigrationKey = 'xyquiver:migration:snake-delta-left:v1';
 const greekLabels = ['\\alpha', '\\beta', '\\gamma', '\\delta', '\\eta'];
 const arrowLabels = ['F', 'G', 'H', 'K', 'L', 'M'];
 
@@ -962,6 +963,24 @@ export function XyQuiverShell() {
       if (!stored) return;
       const restored = validateDocument(JSON.parse(stored));
       if (restored) {
+        if (!localStorage.getItem(snakeDeltaMigrationKey)) {
+          const delta = restored.arrows.find(
+            (arrow) =>
+              arrow.id === 's-delta' &&
+              arrow.source === 's-ker-h' &&
+              arrow.target === 's-coker-f',
+          );
+          if (
+            restored.title === 'Snake lemma' &&
+            restored.nodes.length === 24 &&
+            restored.arrows.length === 30 &&
+            delta &&
+            delta.curve >= 200
+          ) {
+            delta.curve = 180;
+          }
+          localStorage.setItem(snakeDeltaMigrationKey, '1');
+        }
         setHistory({
           past: [],
           present: alignDocumentToSceneGrid(restored),
