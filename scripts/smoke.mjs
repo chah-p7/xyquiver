@@ -9,6 +9,7 @@ import {
   generateXyPic,
   isNativeParallelCell,
   matrixCellEdges,
+  nodeMetrics,
   normalizeMathTex,
   resolveConnectionLevel,
   validateDocument,
@@ -68,6 +69,29 @@ if (
   Math.abs(attachedCell.start.x - attachedCell.end.x) > 0.001
 ) {
   throw new Error('alignment: straight arrow and attached 2-cell were skewed');
+}
+
+const parallel = exampleDocuments.parallel;
+const longTarget = parallel.nodes.find((node) => node.id === 'n-cp');
+if (!longTarget) throw new Error('label clearance: fixture target is missing');
+const targetMetrics = nodeMetrics(longTarget);
+const incomingEndpoints = parallel.arrows
+  .filter((arrow) => arrow.target === longTarget.id)
+  .map((arrow) => getArrowGeometry(parallel, arrow)?.end)
+  .filter(Boolean);
+if (
+  targetMetrics.width < 275 ||
+  incomingEndpoints.length < 3 ||
+  incomingEndpoints.some((point) => {
+    const x = (point.x - longTarget.x) / (targetMetrics.width / 2);
+    const y = (point.y - longTarget.y) / (targetMetrics.height / 2);
+    return x * x + y * y <= 1;
+  }) ||
+  new Set(incomingEndpoints.map((point) => Math.round(point.y))).size < 3
+) {
+  throw new Error(
+    'label clearance: curved arrows overlapped or converged on the vertex label',
+  );
 }
 
 for (const [id, document] of Object.entries(exampleDocuments)) {

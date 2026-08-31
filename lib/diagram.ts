@@ -327,10 +327,15 @@ export function nodeMetrics(node: DiagramNode) {
   if (node.ghost) return { width: 14, height: 14 };
   const label = displayTex(node.label);
   return {
-    width: Math.min(300, Math.max(40, label.length * 10.5 + 22)),
+    // KaTeX renders at 1.21em and scripts still contribute to the inline box.
+    // Keep this deliberately a little wider than the visible glyphs so arrow
+    // geometry never cuts through a single-line object label.
+    width: Math.max(40, label.length * 13.5 + 24),
     height: 40,
   };
 }
+
+const NODE_ARROW_CLEARANCE = 18;
 
 function normalize(vector: Point): Point {
   const length = Math.hypot(vector.x, vector.y) || 1;
@@ -385,20 +390,38 @@ export function getArrowGeometry(
   const normal = { x: chord.y, y: -chord.x };
   const sourceSize = nodeMetrics(source);
   const targetSize = nodeMetrics(target);
+  const control = {
+    x: (source.x + target.x) / 2 + normal.x * arrow.curve,
+    y: (source.y + target.y) / 2 + normal.y * arrow.curve,
+  };
+  const sourceDirection = {
+    x: control.x - source.x,
+    y: control.y - source.y,
+  };
+  const targetDirection = {
+    x: control.x - target.x,
+    y: control.y - target.y,
+  };
   const start = pointOnEllipse(
     source,
-    { x: sourceSize.width / 2 + 9, y: sourceSize.height / 2 + 9 },
-    chord,
+    {
+      x: sourceSize.width / 2 + NODE_ARROW_CLEARANCE,
+      y: sourceSize.height / 2 + NODE_ARROW_CLEARANCE,
+    },
+    Math.hypot(sourceDirection.x, sourceDirection.y) < 1
+      ? chord
+      : sourceDirection,
   );
   const end = pointOnEllipse(
     target,
-    { x: targetSize.width / 2 + 9, y: targetSize.height / 2 + 9 },
-    { x: -chord.x, y: -chord.y },
+    {
+      x: targetSize.width / 2 + NODE_ARROW_CLEARANCE,
+      y: targetSize.height / 2 + NODE_ARROW_CLEARANCE,
+    },
+    Math.hypot(targetDirection.x, targetDirection.y) < 1
+      ? { x: -chord.x, y: -chord.y }
+      : targetDirection,
   );
-  const control = {
-    x: (start.x + end.x) / 2 + normal.x * arrow.curve,
-    y: (start.y + end.y) / 2 + normal.y * arrow.curve,
-  };
   const midpoint = quadraticPoint(start, control, end, 0.5);
   const tangent = quadraticTangent(start, control, end, 0.5);
   const middleNormal = { x: tangent.y, y: -tangent.x };
