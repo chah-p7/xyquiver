@@ -6,8 +6,17 @@ import {
   generateSvg,
   generateXyPic,
   isNativeParallelCell,
+  normalizeMathTex,
   validateDocument,
 } from '../lib/diagram.ts';
+
+if (
+  normalizeMathTex('$$\\mathbf{F}$$') !== '\\mathbf{F}' ||
+  normalizeMathTex('\\(\\alpha_1\\)') !== '\\alpha_1' ||
+  normalizeMathTex('\\[A \\to B\\]') !== 'A \\to B'
+) {
+  throw new Error('latex labels: native math delimiters were not normalized');
+}
 
 for (const [id, document] of Object.entries(exampleDocuments)) {
   const svg = generateSvg(document);

@@ -160,7 +160,7 @@ export function CellStylePopover({
             title="2-cell style"
             className={cn(
               compact
-                ? 'h-8 min-w-32 justify-between gap-1.5 rounded-lg bg-background px-2 shadow-none'
+                ? 'h-8 min-w-28 flex-1 justify-between gap-1.5 rounded-lg bg-background px-2 shadow-none'
                 : 'h-auto w-full justify-between gap-3 px-3 py-2',
             )}
           />
@@ -168,13 +168,10 @@ export function CellStylePopover({
       >
         {compact ? (
           <>
-            <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-indigo-700">
-              Level 2
-            </span>
             <CellStylePreview
               stroke={stroke}
               head={head}
-              className="h-6 w-16"
+              className="h-6 min-w-20 flex-1"
             />
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </>

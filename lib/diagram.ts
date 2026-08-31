@@ -182,8 +182,28 @@ const blackboard: Record<string, string> = {
   Z: 'ℤ',
 };
 
+export function normalizeMathTex(value: string): string {
+  const trimmed = value.trim();
+  const wrappers: Array<[string, string]> = [
+    ['$$', '$$'],
+    ['\\[', '\\]'],
+    ['\\(', '\\)'],
+    ['$', '$'],
+  ];
+  for (const [open, close] of wrappers) {
+    if (
+      trimmed.startsWith(open) &&
+      trimmed.endsWith(close) &&
+      trimmed.length >= open.length + close.length
+    ) {
+      return trimmed.slice(open.length, -close.length).trim();
+    }
+  }
+  return trimmed;
+}
+
 export function displayTex(value: string): string {
-  let result = value.trim();
+  let result = normalizeMathTex(value);
   result = result.replace(
     /\\mathcal\{([A-Z])\}/g,
     (_, letter: string) => mathcal[letter] ?? letter,
@@ -193,7 +213,7 @@ export function displayTex(value: string): string {
     (_, letter: string) => blackboard[letter] ?? letter,
   );
   result = result.replace(
-    /\\(?:operatorname|mathrm|text|txt)\{([^{}]*)\}/g,
+    /\\(?:operatorname|mathrm|mathbf|mathit|text|txt)\{([^{}]*)\}/g,
     '$1',
   );
   result = result.replace(/\\([A-Za-z]+)/g, (match, command: string) => {
@@ -1034,7 +1054,9 @@ export function generateSvg(
 }
 
 function safeTex(value: string): string {
-  return value.replace(/[\r\n]/g, ' ').trim();
+  return normalizeMathTex(value)
+    .replace(/[\r\n]/g, ' ')
+    .trim();
 }
 
 function hopFor(

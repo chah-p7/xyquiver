@@ -9,8 +9,7 @@ import {
 } from 'react';
 import katex from 'katex';
 
-import { ArrowStylePopover } from '@/components/arrow-style-popover';
-import { CellStylePopover } from '@/components/cell-style-popover';
+import { FloatingCellEditor } from '@/components/floating-cell-editor';
 import {
   areParallel,
   canPlaceNodes,
@@ -20,6 +19,7 @@ import {
   getCellGeometry,
   matrixAxes,
   nodeMetrics,
+  normalizeMathTex,
   quadraticPoint,
   resolvedCellHead,
   resolvedCellStroke,
@@ -69,6 +69,7 @@ interface DiagramCanvasProps {
   onSetArrowCurve: (id: ArrowId, curve: number) => void;
   onPatchArrow: (id: ArrowId, patch: Partial<DiagramArrow>) => void;
   onPatchCell: (id: string, patch: Partial<DiagramTwoCell>) => void;
+  onChooseConnectionMode: (mode: ConnectionMode) => void;
   onBeginLabelEdit: (selection: Selection) => void;
   onCommitLabel: (selection: Selection, label: string) => void;
   onCancelLabelEdit: () => void;
@@ -162,7 +163,7 @@ function MathLabel({
   size?: number;
   paper?: boolean;
 }) {
-  const html = katex.renderToString(tex || '\\cdot', {
+  const html = katex.renderToString(normalizeMathTex(tex) || '\\cdot', {
     displayMode: false,
     throwOnError: false,
     strict: 'ignore',
@@ -495,6 +496,7 @@ export function DiagramCanvas({
   onSetArrowCurve,
   onPatchArrow,
   onPatchCell,
+  onChooseConnectionMode,
   onBeginLabelEdit,
   onCommitLabel,
   onCancelLabelEdit,
@@ -1377,7 +1379,7 @@ export function DiagramCanvas({
 
       {selections.length === 1 &&
         selections[0].kind === 'arrow' &&
-        tool === 'select' &&
+        tool !== 'object' &&
         !editing &&
         !gesture &&
         (() => {
@@ -1386,15 +1388,15 @@ export function DiagramCanvas({
           );
           const geometry = arrow ? getArrowGeometry(previewDoc, arrow) : null;
           if (!arrow || !geometry) return null;
-          const width = 154;
-          const height = 48;
+          const width = 330;
+          const height = 122;
           const x = Math.min(
             SCENE_WIDTH - width - 12,
             Math.max(12, geometry.midpoint.x - width / 2),
           );
           const y = Math.min(
             SCENE_HEIGHT - height - 12,
-            Math.max(12, geometry.midpoint.y - 84),
+            Math.max(12, geometry.midpoint.y - 158),
           );
           return (
             <foreignObject
@@ -1406,17 +1408,19 @@ export function DiagramCanvas({
               pointerEvents="all"
             >
               <div
-                className="flex size-full items-center justify-center rounded-xl border border-[#d9ced6] bg-[#fbfaf7]/96 p-1.5 text-[#302d34] shadow-[0_10px_30px_rgb(46_29_44/16%)] backdrop-blur"
+                className="size-full"
                 onPointerDown={(event) => event.stopPropagation()}
                 onDoubleClick={(event) => event.stopPropagation()}
               >
-                <ArrowStylePopover
-                  arrow={arrow}
-                  compact
-                  side="top"
-                  align="center"
-                  sideOffset={10}
-                  onPatch={(patch) => onPatchArrow(arrow.id, patch)}
+                <FloatingCellEditor
+                  key={`${arrow.id}:${arrow.label}`}
+                  item={{ kind: 'arrow', value: arrow }}
+                  connectionMode={connectionMode}
+                  onChooseLevel={onChooseConnectionMode}
+                  onCommitLabel={(label) =>
+                    onCommitLabel({ kind: 'arrow', id: arrow.id }, label)
+                  }
+                  onPatchArrow={(patch) => onPatchArrow(arrow.id, patch)}
                 />
               </div>
             </foreignObject>
@@ -1425,7 +1429,7 @@ export function DiagramCanvas({
 
       {selections.length === 1 &&
         selections[0].kind === 'cell' &&
-        tool === 'select' &&
+        tool !== 'object' &&
         !editing &&
         !gesture &&
         (() => {
@@ -1434,15 +1438,15 @@ export function DiagramCanvas({
           );
           const geometry = cell ? getCellGeometry(previewDoc, cell) : null;
           if (!cell || !geometry) return null;
-          const width = 170;
-          const height = 48;
+          const width = 330;
+          const height = 122;
           const x = Math.min(
             SCENE_WIDTH - width - 12,
             Math.max(12, geometry.midpoint.x - width / 2),
           );
           const y = Math.min(
             SCENE_HEIGHT - height - 12,
-            Math.max(12, geometry.midpoint.y - 84),
+            Math.max(12, geometry.midpoint.y - 158),
           );
           return (
             <foreignObject
@@ -1454,17 +1458,19 @@ export function DiagramCanvas({
               pointerEvents="all"
             >
               <div
-                className="flex size-full items-center justify-center rounded-xl border border-indigo-200 bg-[#fbfaf7]/96 p-1.5 text-[#302d34] shadow-[0_10px_30px_rgb(46_29_44/16%)] backdrop-blur"
+                className="size-full"
                 onPointerDown={(event) => event.stopPropagation()}
                 onDoubleClick={(event) => event.stopPropagation()}
               >
-                <CellStylePopover
-                  cell={cell}
-                  compact
-                  side="top"
-                  align="center"
-                  sideOffset={10}
-                  onPatch={(patch) => onPatchCell(cell.id, patch)}
+                <FloatingCellEditor
+                  key={`${cell.id}:${cell.label}`}
+                  item={{ kind: 'cell', value: cell }}
+                  connectionMode={connectionMode}
+                  onChooseLevel={onChooseConnectionMode}
+                  onCommitLabel={(label) =>
+                    onCommitLabel({ kind: 'cell', id: cell.id }, label)
+                  }
+                  onPatchCell={(patch) => onPatchCell(cell.id, patch)}
                 />
               </div>
             </foreignObject>

@@ -10,7 +10,6 @@ import {
 } from 'react';
 import {
   ArrowLeftRight,
-  ArrowRight,
   Braces,
   ChevronDown,
   CirclePlus,
@@ -23,7 +22,6 @@ import {
   PanelBottomClose,
   Redo2,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -53,12 +51,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -1607,6 +1600,7 @@ export function XyQuiverShell() {
             onSetArrowCurve={setArrowCurve}
             onPatchArrow={patchArrow}
             onPatchCell={patchCell}
+            onChooseConnectionMode={chooseConnectionMode}
             onBeginLabelEdit={(item) => {
               setSelections([item]);
               setEditing(item);
@@ -1643,74 +1637,6 @@ export function XyQuiverShell() {
               <Icon />
             </Button>
           ))}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant={connectionMode === 'auto' ? 'ghost' : 'secondary'}
-                  size="icon-lg"
-                  className={
-                    connectionMode !== 'auto'
-                      ? 'bg-accent text-primary shadow-none'
-                      : 'text-muted-foreground'
-                  }
-                  aria-label={`Draw level: ${
-                    connectionMode === 'auto'
-                      ? 'infer from endpoints'
-                      : connectionMode === 'arrow'
-                        ? 'level 1 override'
-                        : 'level 2 override'
-                  }`}
-                  title={`Draw level: ${
-                    connectionMode === 'auto'
-                      ? 'Auto · infer from endpoints'
-                      : connectionMode === 'arrow'
-                        ? 'Level 1 override'
-                        : 'Level 2 override'
-                  }`}
-                />
-              }
-            >
-              <ArrowLeftRight />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="center" className="w-64">
-              <DropdownMenuRadioGroup
-                value={connectionMode}
-                onValueChange={(value) =>
-                  chooseConnectionMode(value as ConnectionMode)
-                }
-              >
-                <DropdownMenuRadioItem value="auto" className="min-h-10">
-                  <ArrowLeftRight />
-                  Auto · infer from endpoints
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="min-h-10">
-                  <SlidersHorizontal />
-                  Level override
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-56">
-                  <DropdownMenuRadioGroup
-                    value={connectionMode}
-                    onValueChange={(value) =>
-                      chooseConnectionMode(value as ConnectionMode)
-                    }
-                  >
-                    <DropdownMenuRadioItem value="arrow" className="min-h-10">
-                      <ArrowRight />
-                      Level 1 · 1-cell →
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="cell" className="min-h-10">
-                      <Sparkles />
-                      Level 2 · 2-cell ⇒
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Separator className="my-2 w-7" />
           <Button
             variant="ghost"
