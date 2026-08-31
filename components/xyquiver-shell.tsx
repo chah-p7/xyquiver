@@ -78,11 +78,11 @@ import {
   deleteSelections,
   displayTex,
   exampleDocuments,
-  generateSvg,
   generateXyPic,
   inferCellBoundaryPaths,
   isNativeParallelCell,
   matrixAxes,
+  resolveConnectionLevel,
   selectionKey,
   snapPointToMatrix,
   validateDocument,
@@ -97,6 +97,7 @@ import {
   type Selection,
 } from '@/lib/diagram';
 import { localizedDocumentTitle, ui, useUiLanguage } from '@/lib/i18n';
+import { renderXyPicSvg } from '@/lib/xyjax-svg';
 
 interface HistoryState {
   past: DiagramDocument[];
@@ -526,14 +527,40 @@ function ExportDialog({
   onStatus: (status: string) => void;
 }) {
   const language = useUiLanguage();
+  const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'typora' | 'snippet' | 'latex'>('typora');
   const [background, setBackground] = useState(false);
   const xy = useMemo(() => generateXyPic(doc, mode), [doc, mode]);
-  const svg = useMemo(
-    () => generateSvg(doc, { background }),
-    [background, doc],
-  );
+  const nativeXy = useMemo(() => generateXyPic(doc, 'snippet'), [doc]);
+  const [svg, setSvg] = useState('');
+  const [svgLoading, setSvgLoading] = useState(false);
+  const [svgError, setSvgError] = useState('');
   const json = useMemo(() => JSON.stringify(doc, null, 2), [doc]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void renderXyPicSvg(nativeXy.text, {
+      background,
+      title: doc.title || 'XyQuiver diagram',
+    })
+      .then((result) => {
+        if (!cancelled) {
+          setSvg(result);
+          setSvgError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSvgError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) setSvgLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [background, doc.title, nativeXy.text, open]);
 
   const copy = async (
     value: string,
@@ -557,7 +584,16 @@ function ExportDialog({
   };
 
   return (
-    <Dialog>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen && !svg) {
+          setSvgLoading(true);
+          setSvgError('');
+        }
+      }}
+    >
       <DialogTrigger render={<Button size="sm" />}>
         <Download data-icon="inline-start" />
         {ui(language, '导出', 'Export')}
@@ -643,7 +679,11 @@ function ExportDialog({
               </div>
               <Switch
                 checked={background}
-                onCheckedChange={(checked) => setBackground(Boolean(checked))}
+                onCheckedChange={(checked) => {
+                  setBackground(Boolean(checked));
+                  setSvgLoading(true);
+                  setSvgError('');
+                }}
                 aria-label={ui(
                   language,
                   '切换 SVG 背景',
@@ -651,23 +691,52 @@ function ExportDialog({
                 )}
               />
             </div>
-            <div
-              className="grid h-[35vh] place-items-center overflow-hidden rounded-xl border bg-canvas-grid p-4 [&_svg]:max-h-full [&_svg]:max-w-full"
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
+            <div className="grid h-[35vh] place-items-center overflow-hidden rounded-xl border bg-canvas-grid p-4 [&_svg]:max-h-full [&_svg]:max-w-full">
+              {svgLoading ? (
+                <p className="text-sm text-muted-foreground">
+                  {ui(
+                    language,
+                    '正在用 XyJax 原生渲染…',
+                    'Rendering natively with XyJax…',
+                  )}
+                </p>
+              ) : svgError ? (
+                <div className="max-w-md rounded-lg border border-destructive/30 bg-destructive/6 p-3 text-sm text-destructive">
+                  <p className="font-medium">
+                    {ui(language, '原生渲染失败', 'Native rendering failed')}
+                  </p>
+                  <p className="mt-1 text-xs opacity-80">{svgError}</p>
+                </div>
+              ) : svg ? (
+                <div
+                  className="contents"
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              ) : null}
+            </div>
+            {nativeXy.warnings.length > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
+                {nativeXy.warnings.join(' ')}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               {ui(
                 language,
-                '包含真正的矢量曲线、箭头和可编辑文字，不嵌入位图。',
-                'True vector curves, arrowheads, and editable text; no raster image is embedded.',
+                '由当前 Xy-pic 源码经 XyJax 的 SVG 输出器原生渲染，不使用画布自绘路径。',
+                "Rendered natively from the current Xy-pic source by XyJax's SVG output, not from the editor paths.",
               )}
             </p>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => copy(svg, 'SVG')}>
+              <Button
+                variant="outline"
+                disabled={!svg || svgLoading}
+                onClick={() => copy(svg, 'SVG', nativeXy.warnings)}
+              >
                 <Copy data-icon="inline-start" />
                 {ui(language, '复制 SVG', 'Copy SVG')}
               </Button>
               <Button
+                disabled={!svg || svgLoading}
                 onClick={() =>
                   downloadText(svg, 'xyquiver-diagram.svg', 'image/svg+xml')
                 }
@@ -707,8 +776,8 @@ function ExportDialog({
         <DialogFooter className="text-xs text-muted-foreground sm:justify-start">
           {ui(
             language,
-            'SVG 边界会依据图形几何自动裁剪，并包含弯曲箭头与标签。',
-            'SVG bounds are cropped from diagram geometry, including curved arrows and labels.',
+            'SVG 使用 XyJax 的原生 Xy-pic 排版结果；编辑画布仍保留可拖拽的语义控制层。',
+            "SVG uses XyJax's native Xy-pic layout; the editor keeps a semantic interaction layer for dragging.",
           )}
         </DialogFooter>
       </DialogContent>
@@ -1224,7 +1293,7 @@ export function XyQuiverShell() {
               sourcePath: [source.id],
               targetPath: [target.id],
               label,
-              color: '#5b4bc4',
+              color: '#273244',
               head: 'arrow',
               stroke: 'solid',
             },
@@ -1351,12 +1420,7 @@ export function XyQuiverShell() {
         );
         return;
       }
-      const mode =
-        requested === 'auto'
-          ? source.kind === 'arrow' || target.kind === 'arrow'
-            ? 'cell'
-            : 'arrow'
-          : requested;
+      const mode = resolveConnectionLevel(requested, source.kind, target.kind);
       const newNodes: DiagramNode[] = [];
       const resolveNode = (
         anchor: CanvasAnchor,
@@ -1552,7 +1616,7 @@ export function XyQuiverShell() {
               sourcePath: paths.source,
               targetPath: paths.target,
               label,
-              color: '#5b4bc4',
+              color: '#273244',
               head: 'arrow' as const,
               stroke: 'solid' as const,
             },
@@ -1643,9 +1707,8 @@ export function XyQuiverShell() {
   };
 
   const chooseConnectionMode = (mode: ConnectionMode) => {
-    cancelCanvasGesture();
     setConnectionMode(mode);
-    setTool(mode === 'auto' ? 'select' : mode);
+    setTool('select');
     setPendingNode(null);
     setPendingArrow(null);
     setStatus(
@@ -1684,7 +1747,7 @@ export function XyQuiverShell() {
               XyQuiver
             </p>
             <h1 className="max-w-44 truncate text-sm font-medium tracking-[-0.01em] sm:max-w-64">
-              {ui(language, '高阶交换图编辑器', 'Higher diagram editor')}
+              {ui(language, '交换图编辑器', 'Diagram editor')}
             </h1>
           </div>
         </div>
@@ -1814,24 +1877,24 @@ export function XyQuiverShell() {
         >
           <div className="absolute left-[78px] top-4 z-10 hidden items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground sm:flex">
             <span className="font-semibold text-foreground">
-              {tool === 'select'
-                ? ui(
-                    language,
-                    '拖动绘制 · 自动层级',
-                    'Drag to draw · level auto',
-                  )
-                : tool === 'object'
-                  ? ui(language, '放置对象', 'Place object')
-                  : tool === 'arrow'
+              {tool === 'object'
+                ? ui(language, '放置对象', 'Place object')
+                : connectionMode === 'arrow'
+                  ? ui(
+                      language,
+                      '拖动绘制 · 强制层级 1',
+                      'Drag to draw · level 1 override',
+                    )
+                  : connectionMode === 'cell'
                     ? ui(
-                        language,
-                        '拖动绘制 · 强制层级 1',
-                        'Drag to draw · level 1 override',
-                      )
-                    : ui(
                         language,
                         '拖动绘制 · 强制层级 2',
                         'Drag to draw · level 2 override',
+                      )
+                    : ui(
+                        language,
+                        '拖动绘制 · 自动层级',
+                        'Drag to draw · level auto',
                       )}
             </span>
             <span className="text-border">/</span>
@@ -1945,9 +2008,9 @@ export function XyQuiverShell() {
             <Grid3X3 />
           </Button>
           <div className="mt-auto rounded-md border bg-muted/60 px-1.5 py-1 font-mono text-[9px] text-muted-foreground">
-            {tool === 'arrow'
+            {connectionMode === 'arrow'
               ? 'L1'
-              : tool === 'cell'
+              : connectionMode === 'cell'
                 ? 'L2'
                 : tools.find((item) => item.id === tool)?.key}
           </div>

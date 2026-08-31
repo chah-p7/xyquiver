@@ -8,7 +8,9 @@ import {
   generateSvg,
   generateXyPic,
   isNativeParallelCell,
+  matrixCellEdges,
   normalizeMathTex,
+  resolveConnectionLevel,
   validateDocument,
 } from '../lib/diagram.ts';
 import { localizedDocumentTitle } from '../lib/i18n.ts';
@@ -27,6 +29,27 @@ if (
   normalizeMathTex('\\[A \\to B\\]') !== 'A \\to B'
 ) {
   throw new Error('latex labels: native math delimiters were not normalized');
+}
+
+const cellEdges = matrixCellEdges([100, 200, 300], 0, 400);
+if (
+  JSON.stringify(cellEdges) !== JSON.stringify([50, 150, 250, 350]) ||
+  ![100, 200, 300].every(
+    (center, index) =>
+      cellEdges[index] < center && center < cellEdges[index + 1],
+  )
+) {
+  throw new Error('grid: snap points were not centered inside visible cells');
+}
+
+if (
+  resolveConnectionLevel('cell', 'node', 'node') !== 'cell' ||
+  resolveConnectionLevel('arrow', 'node', 'node') !== 'arrow' ||
+  resolveConnectionLevel('auto', 'node', 'arrow') !== 'cell'
+) {
+  throw new Error(
+    'connection level: explicit 1-cell/2-cell choice was ignored',
+  );
 }
 
 const homotopy = exampleDocuments.homotopy;

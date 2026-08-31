@@ -19,11 +19,13 @@ import {
   getArrowGeometry,
   getCellGeometry,
   matrixAxes,
+  matrixCellEdges,
   nodeMetrics,
   normalizeMathTex,
   quadraticPoint,
   resolvedCellHead,
   resolvedCellStroke,
+  resolveConnectionLevel,
   SCENE_HEIGHT,
   SCENE_WIDTH,
   selectionKey,
@@ -223,7 +225,11 @@ function MathLabel({
         style={{ color, fontSize: `${size}px` }}
       >
         <span
-          className={paper ? 'rounded-[4px] bg-[#fbfaf7]/94 px-1.5 py-0.5' : ''}
+          className={
+            paper
+              ? 'whitespace-nowrap rounded-[4px] bg-[#fbfaf7]/94 px-1.5 py-0.5'
+              : 'whitespace-nowrap'
+          }
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>
@@ -396,15 +402,6 @@ function anchorFromPoint(
   return { kind: 'point', point: snapPointToMatrix(doc, point) };
 }
 
-function resolvedConnectionMode(
-  requested: ConnectionMode,
-  source: CanvasAnchor,
-  target: CanvasAnchor,
-): Exclude<ConnectionMode, 'auto'> {
-  if (requested !== 'auto') return requested;
-  return source.kind === 'arrow' || target.kind === 'arrow' ? 'cell' : 'arrow';
-}
-
 export function connectionValidationError(
   source: CanvasAnchor,
   target: CanvasAnchor,
@@ -423,7 +420,7 @@ export function connectionValidationError(
   ) {
     return 'Drag to a different anchor to create a connection.';
   }
-  const mode = resolvedConnectionMode(requested, source, target);
+  const mode = resolveConnectionLevel(requested, source.kind, target.kind);
   if (
     mode === 'arrow' &&
     (source.kind === 'arrow' || target.kind === 'arrow')
@@ -435,17 +432,14 @@ export function connectionValidationError(
 
 function CellGlyph({
   geometry,
-  color,
-  selected,
   head,
   stroke,
 }: {
   geometry: NonNullable<ReturnType<typeof getCellGeometry>>;
-  color: string;
-  selected: boolean;
   head: 'arrow' | 'reverse' | 'none';
   stroke: 'solid' | 'dashed' | 'dotted' | 'none';
 }) {
+  const color = '#273244';
   const reverse = head === 'reverse';
   const hasHead = stroke !== 'none' && (head === 'arrow' || head === 'reverse');
   const tip = reverse ? geometry.start : geometry.end;
@@ -482,7 +476,7 @@ function CellGlyph({
         d={`M ${from.x} ${from.y} L ${to.x} ${to.y}`}
         fill="none"
         stroke={color}
-        strokeWidth={selected ? 2.4 : 1.75}
+        strokeWidth="1.75"
         strokeLinecap={stroke === 'dotted' ? 'round' : 'butt'}
         strokeDasharray={
           stroke === 'dashed' ? '9 6' : stroke === 'dotted' ? '1 6' : undefined
@@ -508,7 +502,7 @@ function CellGlyph({
           d={`M ${wingA.x} ${wingA.y} L ${tip.x} ${tip.y} L ${wingB.x} ${wingB.y}`}
           fill="none"
           stroke={color}
-          strokeWidth={selected ? 2.4 : 1.75}
+          strokeWidth="1.75"
           strokeLinecap="round"
           strokeLinejoin="round"
           pointerEvents="none"
@@ -553,6 +547,8 @@ export function DiagramCanvas({
     [selections],
   );
   const grid = matrixAxes(doc, true);
+  const gridColumns = matrixCellEdges(grid.columns, 0, SCENE_WIDTH);
+  const gridRows = matrixCellEdges(grid.rows, 0, SCENE_HEIGHT);
 
   const clientToScene = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -820,7 +816,11 @@ export function DiagramCanvas({
       : null;
   const previewMode =
     gesture?.kind === 'connect' && connectTarget
-      ? resolvedConnectionMode(connectionMode, gesture.source, connectTarget)
+      ? resolveConnectionLevel(
+          connectionMode,
+          gesture.source.kind,
+          connectTarget.kind,
+        )
       : 'arrow';
   const connectionError =
     gesture?.kind === 'connect' && connectTarget
@@ -975,44 +975,39 @@ export function DiagramCanvas({
         }}
       />
 
-      {showGrid && grid.columns.length > 0 && grid.rows.length > 0 && (
-        <g aria-label="Xy-pic matrix grid" pointerEvents="none">
-          {grid.rows.map((y) => (
+      {showGrid && gridColumns.length > 1 && gridRows.length > 1 && (
+        <g
+          aria-label={ui(
+            language,
+            '对象居中的矩阵网格',
+            'Object-centered matrix grid',
+          )}
+          pointerEvents="none"
+        >
+          {gridRows.map((y) => (
             <line
               key={`row-${y}`}
-              x1={grid.columns[0]}
+              x1={gridColumns[0]}
               y1={y}
-              x2={grid.columns.at(-1)}
+              x2={gridColumns.at(-1)}
               y2={y}
               stroke="#5b5360"
               strokeWidth="1"
               opacity=".14"
             />
           ))}
-          {grid.columns.map((x) => (
+          {gridColumns.map((x) => (
             <line
               key={`column-${x}`}
               x1={x}
-              y1={grid.rows[0]}
+              y1={gridRows[0]}
               x2={x}
-              y2={grid.rows.at(-1)}
+              y2={gridRows.at(-1)}
               stroke="#5b5360"
               strokeWidth="1"
               opacity=".14"
             />
           ))}
-          {grid.rows.flatMap((y) =>
-            grid.columns.map((x) => (
-              <circle
-                key={`${x}-${y}`}
-                cx={x}
-                cy={y}
-                r="2.5"
-                fill="#675d68"
-                opacity=".48"
-              />
-            )),
-          )}
         </g>
       )}
 
@@ -1166,7 +1161,6 @@ export function DiagramCanvas({
           const geometry = getCellGeometry(previewDoc, cell);
           if (!geometry) return null;
           const selected = selectedKeys.has(`cell:${cell.id}`);
-          const color = selected ? '#5b284d' : cell.color;
           return (
             <g
               key={cell.id}
@@ -1213,8 +1207,6 @@ export function DiagramCanvas({
               )}
               <CellGlyph
                 geometry={geometry}
-                color={color}
-                selected={selected}
                 head={resolvedCellHead(cell)}
                 stroke={resolvedCellStroke(cell)}
               />
@@ -1227,7 +1219,7 @@ export function DiagramCanvas({
                     220,
                     Math.max(52, displayTex(cell.label).length * 11 + 26),
                   )}
-                  color="#6c3f63"
+                  color="#273244"
                   size={17}
                   paper
                 />
@@ -1613,7 +1605,7 @@ export function DiagramCanvas({
               <path
                 d={`M ${gesture.source.point.x - 2} ${gesture.source.point.y} L ${connectTarget.point.x - 2} ${connectTarget.point.y}`}
                 fill="none"
-                stroke={connectionError ? '#b34b55' : '#8a4e75'}
+                stroke={connectionError ? '#b34b55' : '#273244'}
                 strokeWidth="1.6"
                 strokeDasharray="6 5"
                 opacity=".78"
@@ -1621,7 +1613,7 @@ export function DiagramCanvas({
               <path
                 d={`M ${gesture.source.point.x + 2} ${gesture.source.point.y} L ${connectTarget.point.x + 2} ${connectTarget.point.y}`}
                 fill="none"
-                stroke={connectionError ? '#b34b55' : '#8a4e75'}
+                stroke={connectionError ? '#b34b55' : '#273244'}
                 strokeWidth="1.6"
                 strokeDasharray="6 5"
                 markerEnd="url(#xyq-canvas-arrow)"

@@ -201,11 +201,19 @@ export function FloatingCellEditor({
       </div>
 
       <div className="flex items-center gap-1.5 rounded-xl border border-[#d9ced6] bg-[#fbfaf7]/97 p-1.5 shadow-[0_8px_24px_rgb(46_29_44/12%)] backdrop-blur">
-        <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/65 p-0.5">
+        <div
+          className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/65 p-0.5"
+          aria-label={ui(language, '下一条连线的层级', 'Next connection level')}
+        >
           <Button
             type="button"
             size="xs"
             variant={connectionMode === 'auto' ? 'secondary' : 'ghost'}
+            className={
+              connectionMode === 'auto'
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : undefined
+            }
             aria-pressed={connectionMode === 'auto'}
             title={ui(
               language,
@@ -220,6 +228,11 @@ export function FloatingCellEditor({
             type="button"
             size="xs"
             variant={connectionMode === 'arrow' ? 'secondary' : 'ghost'}
+            className={
+              connectionMode === 'arrow'
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : undefined
+            }
             aria-pressed={connectionMode === 'arrow'}
             title={ui(
               language,
@@ -234,6 +247,11 @@ export function FloatingCellEditor({
             type="button"
             size="xs"
             variant={connectionMode === 'cell' ? 'secondary' : 'ghost'}
+            className={
+              connectionMode === 'cell'
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : undefined
+            }
             aria-pressed={connectionMode === 'cell'}
             title={ui(
               language,

@@ -8,6 +8,8 @@ export type ArrowTail = 'none' | 'hook' | 'mapsto';
 export type LabelSide = 'left' | 'right';
 export type CellHead = 'arrow' | 'reverse' | 'equality' | 'none';
 export type CellStroke = 'solid' | 'dashed' | 'dotted' | 'none';
+export type ConnectionLevel = 'auto' | 'arrow' | 'cell';
+export type ConnectionAnchorKind = 'point' | 'node' | 'arrow';
 
 export interface Point {
   x: number;
@@ -271,6 +273,46 @@ export function matrixAxes(
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
   return { columns, rows };
+}
+
+/**
+ * Convert matrix snap-point centres into the surrounding cell boundaries.
+ * Keeping this separate from `matrixAxes` means snapping still targets the
+ * vertices while the visible grid reads as cells around those vertices.
+ */
+export function matrixCellEdges(
+  centers: number[],
+  minimum: number,
+  maximum: number,
+): number[] {
+  const points = [...new Set(centers)]
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+  if (points.length === 0 || maximum <= minimum) return [];
+
+  const firstGap = points.length > 1 ? points[1] - points[0] : SNAP;
+  const lastGap = points.length > 1 ? points.at(-1)! - points.at(-2)! : SNAP;
+  const edges = [
+    points[0] - firstGap / 2,
+    ...points.slice(0, -1).map((point, index) => {
+      const next = points[index + 1];
+      return point + (next - point) / 2;
+    }),
+    points.at(-1)! + lastGap / 2,
+  ];
+
+  return [
+    ...new Set(edges.map((edge) => Math.min(maximum, Math.max(minimum, edge)))),
+  ];
+}
+
+export function resolveConnectionLevel(
+  requested: ConnectionLevel,
+  source: ConnectionAnchorKind,
+  target: ConnectionAnchorKind,
+): Exclude<ConnectionLevel, 'auto'> {
+  if (requested !== 'auto') return requested;
+  return source === 'arrow' || target === 'arrow' ? 'cell' : 'arrow';
 }
 
 export function snapPointToMatrix(doc: DiagramDocument, point: Point): Point {
@@ -1020,7 +1062,7 @@ export function generateSvg(
     .map((cell) => {
       const geometry = getCellGeometry(doc, cell);
       if (!geometry) return '';
-      const color = colorOrDefault(cell.color, '#5b4bc4');
+      const color = '#1f2937';
       const offset = geometry.normal;
       const stroke = resolvedCellStroke(cell);
       const direction = resolvedCellHead(cell);
@@ -1447,7 +1489,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         sourcePath: ['q-f', 'q-g'],
         targetPath: ['q-h'],
         label: '\\alpha',
-        color: '#4f46a5',
+        color: '#273244',
         head: 'arrow',
       },
     ],
@@ -1481,21 +1523,21 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         sourceArrow: 'p-f',
         targetArrow: 'p-fp',
         label: '\\alpha',
-        color: '#4f46a5',
+        color: '#273244',
       },
       {
         id: 'p-beta',
         sourceArrow: 'p-g',
         targetArrow: 'p-gp',
         label: '\\beta',
-        color: '#4f46a5',
+        color: '#273244',
       },
       {
         id: 'p-paste',
         sourceArrow: 'p-gf',
         targetArrow: 'p-gpfp',
         label: '\\beta\\ast\\alpha',
-        color: '#4f46a5',
+        color: '#273244',
       },
     ],
   },
@@ -1518,7 +1560,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         sourceArrow: 'a-f',
         targetArrow: 'a-g',
         label: '\\alpha',
-        color: '#5b4bc4',
+        color: '#273244',
       },
     ],
   },
@@ -1551,7 +1593,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         sourceArrow: 'a-rho1',
         targetArrow: 'a-rho0',
         label: '\\rho_0',
-        color: '#5b4bc4',
+        color: '#273244',
       },
     ],
   },
