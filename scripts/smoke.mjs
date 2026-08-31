@@ -1,4 +1,5 @@
 import {
+  alignDocumentToSceneGrid,
   arrowGridAnchors,
   cellCreationConflict,
   constrainArrowCurve,
@@ -185,8 +186,9 @@ if (
   parallel.arrows.find((arrow) => arrow.id === 'a-rho1')?.source !== 'n-cp' ||
   parallel.arrows.find((arrow) => arrow.id === 'a-rho1p')?.source !== 'n-cp' ||
   !isNativeParallelCell(parallel, parallel.cells[0]) ||
-  !anchoredParallelXy.includes("\\hbox{\\rlap{$C'_i=C+d\\rho_2") ||
-  !anchoredParallelXy.includes("=C+d\\rho'_2$}\\phantom{$C$}}") ||
+  !anchoredParallelXy.includes("\\rlap{C'_i=C+d\\rho_2") ||
+  !anchoredParallelXy.includes("=C+d\\rho'_2}\\phantom{C}") ||
+  anchoredParallelXy.includes('\\hbox{\\rlap') ||
   !anchoredParallelXy.includes('\\xtwocell') ||
   !anchoredParallelXy.includes("^{\\rho_1}_{\\rho'_1}")
 ) {
@@ -235,10 +237,29 @@ if (
   connectingMap?.source !== 's-ker-h' ||
   connectingMap.target !== 's-coker-f' ||
   !cokerHorizontal ||
-  cokerHorizontal.start.x > 365 ||
-  !homotopyXy.includes('@C=3.2pc @R=1.92pc')
+  cokerHorizontal.start.x > 372 ||
+  !homotopyXy.includes('@C=2.8pc @R=1.9pc') ||
+  !homotopyXy.includes('\\ar[rr]^{\\overset') ||
+  !homotopyXy.includes('\\ar@{}[rr]|(0.64)*{}="xyq-a1"') ||
+  homotopyXy.includes('\\ar[rrrr]')
 ) {
-  throw new Error('snake lemma or proportional Xy-pic alignment regressed');
+  throw new Error('snake lemma or logical Xy-pic alignment regressed');
+}
+
+const oldDraft = JSON.parse(JSON.stringify(homotopy));
+oldDraft.nodes[0].x = 151;
+oldDraft.nodes[0].y = 105;
+oldDraft.nodes[1].x = 153;
+oldDraft.nodes[1].y = 106;
+const alignedDraft = alignDocumentToSceneGrid(oldDraft);
+const alignedPositions = alignedDraft.nodes.map(
+  (node) => `${node.x}:${node.y}`,
+);
+if (
+  alignedDraft.nodes.some((node) => node.x % 40 !== 0 || node.y % 40 !== 0) ||
+  new Set(alignedPositions).size !== alignedPositions.length
+) {
+  throw new Error('fixed grid migration did not centre or separate objects');
 }
 
 for (const [id, document] of Object.entries(exampleDocuments)) {
@@ -270,9 +291,9 @@ const quasi = exampleDocuments.quasicategory;
 const quasiXy = generateXyPic(quasi, 'snippet').text;
 if (
   !quasiXy.includes('\\ar@{=>}') ||
-  !quasiXy.includes('^{\\alpha}') ||
+  !quasiXy.includes('^(.35){\\alpha}') ||
   !quasiXy.includes('|(0.5)*{}="xyq-a1"') ||
-  !quasiXy.includes('\\POS "xyq-n2"')
+  !quasiXy.includes('\\POS "1,2"')
 ) {
   throw new Error(
     'quasicategory: vertex-to-edge 2-cell was not attached to a named path position',

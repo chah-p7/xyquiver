@@ -163,7 +163,42 @@ function fitViewBoxToRenderedContent(svg: SVGSVGElement, padding = 120) {
     // root viewBox coordinates. Do not union this with MathJax's original
     // viewBox: that box can be extremely wide and collapse the real diagram
     // into what looks like a single horizontal line.
-    const bounds = svg.getBBox();
+    const nativeBounds =
+      typeof svg.getBBox === 'function' ? svg.getBBox() : null;
+    let bounds = nativeBounds;
+    if (
+      !bounds ||
+      ![bounds.x, bounds.y, bounds.width, bounds.height].every(
+        Number.isFinite,
+      ) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
+    ) {
+      const content = svg.querySelector(':scope > g');
+      const rootRect = svg.getBoundingClientRect();
+      const contentRect = content?.getBoundingClientRect();
+      if (
+        contentRect &&
+        rootRect.width > 0 &&
+        rootRect.height > 0 &&
+        contentRect.width > 0 &&
+        contentRect.height > 0
+      ) {
+        const [x, y, width, height] = current;
+        const scale = Math.min(
+          rootRect.width / width,
+          rootRect.height / height,
+        );
+        const leftInset = (rootRect.width - width * scale) / 2;
+        const topInset = (rootRect.height - height * scale) / 2;
+        bounds = {
+          x: x + (contentRect.left - rootRect.left - leftInset) / scale,
+          y: y + (contentRect.top - rootRect.top - topInset) / scale,
+          width: contentRect.width / scale,
+          height: contentRect.height / scale,
+        } as DOMRect;
+      }
+    }
     if (
       !bounds ||
       ![bounds.x, bounds.y, bounds.width, bounds.height].every(
@@ -201,6 +236,12 @@ export async function renderXyPicSvg(
   const rendered = container.querySelector('svg');
   if (!(rendered instanceof SVGSVGElement)) {
     throw new Error('XyJax did not return an SVG diagram.');
+  }
+  const mathError = rendered.querySelector('[data-mjx-error]');
+  if (mathError) {
+    throw new Error(
+      `XyJax could not render this diagram: ${mathError.getAttribute('data-mjx-error') ?? 'unknown TeX error'}`,
+    );
   }
 
   const svg = rendered.cloneNode(true) as SVGSVGElement;

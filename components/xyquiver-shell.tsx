@@ -69,6 +69,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   areParallel,
+  alignDocumentToSceneGrid,
   cellCreationConflict,
   cellBoundaryPaths,
   cellSourceAnchor,
@@ -873,7 +874,11 @@ export function XyQuiverShell() {
   const loadDocument = useCallback(
     (next: DiagramDocument, message: string) => {
       cancelCanvasGesture();
-      setHistory({ past: [], present: cloneDocument(next), future: [] });
+      setHistory({
+        past: [],
+        present: alignDocumentToSceneGrid(next),
+        future: [],
+      });
       setSelections([]);
       setEditing(null);
       setPendingNode(null);
@@ -894,7 +899,11 @@ export function XyQuiverShell() {
       if (!stored) return;
       const restored = validateDocument(JSON.parse(stored));
       if (restored) {
-        setHistory({ past: [], present: restored, future: [] });
+        setHistory({
+          past: [],
+          present: alignDocumentToSceneGrid(restored),
+          future: [],
+        });
         setSelections([]);
         setStatus(
           ui(restoredLanguage, '已恢复本地草稿。', 'Restored local draft.'),

@@ -336,39 +336,88 @@ export function matrixAxes(
   return { columns, rows };
 }
 
-function medianAxisGap(values: number[]): number {
-  const gaps = values
-    .slice(1)
-    .map((value, index) => value - values[index])
-    .filter((gap) => gap > 0)
-    .sort((left, right) => left - right);
-  if (gaps.length === 0) return SNAP;
-  const middle = Math.floor(gaps.length / 2);
-  return gaps.length % 2 ? gaps[middle] : (gaps[middle - 1] + gaps[middle]) / 2;
+/**
+ * Xy-pic works on a logical matrix, not editor pixels. Only occupied object
+ * rows and columns belong in the exported matrix: empty screen snap points
+ * must not turn a two-column diagram into a twenty-column diagram.
+ */
+export function exportMatrixAxes(doc: DiagramDocument): DiagramGrid {
+  return {
+    columns: [...new Set(doc.nodes.map((node) => node.x))]
+      .filter(Number.isFinite)
+      .sort((left, right) => left - right),
+    rows: [...new Set(doc.nodes.map((node) => node.y))]
+      .filter(Number.isFinite)
+      .sort((top, bottom) => top - bottom),
+  };
 }
 
 /**
- * Xy-pic matrices use one spacing value per axis, while the editor permits
- * non-uniform grid gaps. Insert empty matrix slots for unusually large gaps so
- * exported slopes and vertical alignment still resemble the canvas.
+ * Migrate documents created before the fixed visual grid was introduced.
+ * Every object is placed on a visible cell centre and coincident objects are
+ * moved to the nearest free centre without changing their relative order.
  */
-function proportionalMatrixAxis(values: number[]): number[] {
-  if (values.length < 2) return values;
-  const unit = medianAxisGap(values);
-  const expanded = [values[0]];
-  for (let index = 1; index < values.length; index += 1) {
-    const previous = values[index - 1];
-    const current = values[index];
-    const steps = Math.min(
-      8,
-      Math.max(1, Math.round((current - previous) / unit)),
+export function alignDocumentToSceneGrid(
+  document: DiagramDocument,
+): DiagramDocument {
+  const doc = cloneDocument(document);
+  const used = new Set<string>();
+  const maxColumn = Math.floor((SCENE_WIDTH - SNAP) / SNAP) * SNAP;
+  const maxRow = Math.floor((SCENE_HEIGHT - SNAP) / SNAP) * SNAP;
+  const clampCenter = (point: Point): Point => ({
+    x: Math.min(maxColumn, Math.max(SNAP, snap(point.x))),
+    y: Math.min(maxRow, Math.max(SNAP, snap(point.y))),
+  });
+  const nearestFree = (origin: Point): Point => {
+    const candidates: Point[] = [];
+    const maxRadius = Math.max(
+      Math.floor(SCENE_WIDTH / SNAP),
+      Math.floor(SCENE_HEIGHT / SNAP),
     );
-    for (let step = 1; step < steps; step += 1) {
-      expanded.push(previous + ((current - previous) * step) / steps);
+    for (let radius = 0; radius <= maxRadius; radius += 1) {
+      candidates.length = 0;
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        const dy = radius - Math.abs(dx);
+        candidates.push(
+          { x: origin.x + dx * SNAP, y: origin.y + dy * SNAP },
+          ...(dy === 0
+            ? []
+            : [{ x: origin.x + dx * SNAP, y: origin.y - dy * SNAP }]),
+        );
+      }
+      const free = candidates.find(
+        (point) =>
+          point.x >= SNAP &&
+          point.x <= maxColumn &&
+          point.y >= SNAP &&
+          point.y <= maxRow &&
+          !used.has(`${point.x}:${point.y}`),
+      );
+      if (free) return free;
     }
-    expanded.push(current);
+    return origin;
+  };
+
+  doc.nodes = doc.nodes.map((node) => {
+    const position = nearestFree(clampCenter(node));
+    used.add(`${position.x}:${position.y}`);
+    return { ...node, ...position };
+  });
+  if (doc.grid) {
+    doc.grid = {
+      columns: [
+        ...new Set(
+          doc.grid.columns.map((value) => clampCenter({ x: value, y: SNAP }).x),
+        ),
+      ].sort((left, right) => left - right),
+      rows: [
+        ...new Set(
+          doc.grid.rows.map((value) => clampCenter({ x: SNAP, y: value }).y),
+        ),
+      ].sort((top, bottom) => top - bottom),
+    };
   }
-  return expanded;
+  return doc;
 }
 
 /**
@@ -513,8 +562,8 @@ export function getArrowGeometry(
 
   const chord = normalize({ x: target.x - source.x, y: target.y - source.y });
   const normal = { x: chord.y, y: -chord.x };
-  const start = pointOutsideNodeLabel(source, chord, 9);
-  const end = pointOutsideNodeLabel(target, { x: -chord.x, y: -chord.y }, 9);
+  const start = pointOutsideNodeLabel(source, chord, 13);
+  const end = pointOutsideNodeLabel(target, { x: -chord.x, y: -chord.y }, 13);
   const control = {
     x: (start.x + end.x) / 2 + normal.x * arrow.curve,
     y: (start.y + end.y) / 2 + normal.y * arrow.curve,
@@ -1387,7 +1436,10 @@ function anchoredNodeTex(value: string): string {
   const full = safeTex(value);
   const first = firstNodeTexAtom(full);
   if (!full || !first || full === first) return full || '{}';
-  return `\\hbox{\\rlap{$${full}$}\\phantom{$${first}$}}`;
+  // The matrix entry stays as wide as its first glyph, while the complete
+  // object is painted to the right. Keep \rlap in math mode: wrapping it in
+  // \hbox makes MathJax/XyJax emit an merror instead of a diagram.
+  return `\\rlap{${full}}\\phantom{${first}}`;
 }
 
 function hopFor(
@@ -1444,10 +1496,13 @@ function arrowXyCommand(
   const label = arrow.label
     ? `${arrow.labelSide === 'left' ? '^' : '_'}{${safeTex(arrow.label)}}`
     : '';
+  const visible = `\\ar${curve}${style}[${hop}]${label}`;
+  // A | break placed on the visible arrow can erase a stretch of its shaft.
+  // Name 2-cell attachment points on an invisible companion arrow instead.
   const namedAnchors = aliases
-    .map(({ name, t }) => `|(${round(t)})*{}="${name}"`)
-    .join('');
-  return `\\ar${curve}${style}[${hop}]${label}${namedAnchors}`;
+    .map(({ name, t }) => `\\ar${curve}@{}[${hop}]|(${round(t)})*{}="${name}"`)
+    .join(' ');
+  return [visible, namedAnchors].filter(Boolean).join(' ');
 }
 
 export function generateXyPic(
@@ -1469,9 +1524,9 @@ export function generateXyPic(
     const empty = '\\begin{xy}\\xymatrix{ {} }\\end{xy}';
     return wrap(empty);
   }
-  const axes = matrixAxes(doc);
-  const xs = proportionalMatrixAxis(axes.columns);
-  const ys = proportionalMatrixAxis(axes.rows);
+  const axes = exportMatrixAxes(doc);
+  const xs = axes.columns;
+  const ys = axes.rows;
   const commands = new Map<NodeId, string[]>();
   const consumedArrows = new Set<ArrowId>();
   const nativeBoundaryOwners = new Map<ArrowId, CellId>();
@@ -1558,16 +1613,19 @@ export function generateXyPic(
     nativeCellCount += 1;
   }
 
-  const nodeAliases = new Map(
-    doc.nodes.map((node, index) => [node.id, `xyq-n${index + 1}`]),
-  );
   const arrowAnchorAliases = new Map<
     ArrowId,
     Map<string, { name: string; t: number }>
   >();
   let arrowAnchorIndex = 0;
   const resolveAnchorAlias = (anchor: CellAnchor): string | null => {
-    if (anchor.kind === 'node') return nodeAliases.get(anchor.id) ?? null;
+    if (anchor.kind === 'node') {
+      const node = doc.nodes.find((item) => item.id === anchor.id);
+      if (!node) return null;
+      const row = ys.indexOf(node.y);
+      const column = xs.indexOf(node.x);
+      return row >= 0 && column >= 0 ? `${row + 1},${column + 1}` : null;
+    }
     const arrow = doc.arrows.find((item) => item.id === anchor.id);
     if (
       !arrow ||
@@ -1644,7 +1702,7 @@ export function generateXyPic(
         `2-cell ${cell.label || cell.id} uses Xy-pic's nearest ${stroke} shaft glyph.`,
       );
     }
-    const label = cell.label ? `^{${safeTex(cell.label)}}` : '';
+    const label = cell.label ? `^(.35){${safeTex(cell.label)}}` : '';
     const curve =
       Math.abs(cell.curve ?? 0) < 1
         ? ''
@@ -1680,9 +1738,7 @@ export function generateXyPic(
         );
         if (!node) return '{}';
         const label = node.ghost ? '{}' : anchoredNodeTex(node.label);
-        const alias = nodeAliases.get(node.id);
-        const aliasCommand = alias ? `\\ar@{}[]|*{}="${alias}"` : '';
-        return [label, aliasCommand, ...(commands.get(node.id) ?? [])]
+        return [label, ...(commands.get(node.id) ?? [])]
           .filter(Boolean)
           .join(' ');
       })
@@ -1691,16 +1747,10 @@ export function generateXyPic(
   const initializer = nativeCellCount > 0 ? '\\UseAllTwocells\n' : '';
   const trailing =
     generalCellCommands.length > 0 ? `\n${generalCellCommands.join('\n')}` : '';
-  const columnGap =
-    xs.length > 1 ? (xs.at(-1)! - xs[0]) / (xs.length - 1) : SNAP;
-  const rowGap = ys.length > 1 ? (ys.at(-1)! - ys[0]) / (ys.length - 1) : SNAP;
-  // Keep one physical conversion for both axes. This preserves the canvas
-  // aspect ratio and avoids inflating sparse matrices merely to fill a page.
-  const sceneUnit = 0.016;
-  const columnSpacing = round(
-    Math.min(5.5, Math.max(1.8, columnGap * sceneUnit)),
-  );
-  const rowSpacing = round(Math.min(5.5, Math.max(1.8, rowGap * sceneUnit)));
+  // Xy-pic row/column spacing is typographic. It must not be inferred from
+  // browser pixels; doing so makes Typora arrows huge compared with glyphs.
+  const columnSpacing = 2.8;
+  const rowSpacing = 1.9;
   const core = `\\begin{xy}\n${initializer}\\xymatrix @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
   return wrap(core);
 }
