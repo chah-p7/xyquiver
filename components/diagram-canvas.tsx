@@ -9,6 +9,7 @@ import {
 } from 'react';
 import katex from 'katex';
 
+import { ArrowStylePopover } from '@/components/arrow-style-popover';
 import {
   areParallel,
   canPlaceNodes,
@@ -26,6 +27,7 @@ import {
   snapPointToMatrix,
   type ArrowId,
   type CellAnchor,
+  type DiagramArrow,
   type DiagramDocument,
   type NodeId,
   type Point,
@@ -61,6 +63,7 @@ interface DiagramCanvasProps {
   ) => void;
   onMoveNodes: (positions: Record<NodeId, Point>) => void;
   onSetArrowCurve: (id: ArrowId, curve: number) => void;
+  onPatchArrow: (id: ArrowId, patch: Partial<DiagramArrow>) => void;
   onBeginLabelEdit: (selection: Selection) => void;
   onCommitLabel: (selection: Selection, label: string) => void;
   onCancelLabelEdit: () => void;
@@ -480,6 +483,7 @@ export function DiagramCanvas({
   onQuickConnect,
   onMoveNodes,
   onSetArrowCurve,
+  onPatchArrow,
   onBeginLabelEdit,
   onCommitLabel,
   onCancelLabelEdit,
@@ -1350,6 +1354,54 @@ export function DiagramCanvas({
                 }}
               />
             </g>
+          );
+        })()}
+
+      {selections.length === 1 &&
+        selections[0].kind === 'arrow' &&
+        tool === 'select' &&
+        !editing &&
+        !gesture &&
+        (() => {
+          const arrow = previewDoc.arrows.find(
+            (item) => item.id === selections[0].id,
+          );
+          const geometry = arrow ? getArrowGeometry(previewDoc, arrow) : null;
+          if (!arrow || !geometry) return null;
+          const width = 154;
+          const height = 48;
+          const x = Math.min(
+            SCENE_WIDTH - width - 12,
+            Math.max(12, geometry.midpoint.x - width / 2),
+          );
+          const y = Math.min(
+            SCENE_HEIGHT - height - 12,
+            Math.max(12, geometry.midpoint.y - 84),
+          );
+          return (
+            <foreignObject
+              x={x}
+              y={y}
+              width={width}
+              height={height}
+              overflow="visible"
+              pointerEvents="all"
+            >
+              <div
+                className="flex size-full items-center justify-center rounded-xl border border-[#d9ced6] bg-[#fbfaf7]/96 p-1.5 text-[#302d34] shadow-[0_10px_30px_rgb(46_29_44/16%)] backdrop-blur"
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                <ArrowStylePopover
+                  arrow={arrow}
+                  compact
+                  side="top"
+                  align="center"
+                  sideOffset={10}
+                  onPatch={(patch) => onPatchArrow(arrow.id, patch)}
+                />
+              </div>
+            </foreignObject>
           );
         })()}
 
