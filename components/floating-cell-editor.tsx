@@ -11,6 +11,7 @@ import {
   type DiagramArrow,
   type DiagramTwoCell,
 } from '@/lib/diagram';
+import { ui, useUiLanguage } from '@/lib/i18n';
 
 type LabelFace = 'math' | 'upright' | 'bold' | 'italic';
 type DrawLevel = 'auto' | 'arrow' | 'cell';
@@ -56,6 +57,7 @@ export function FloatingCellEditor({
   onPatchArrow?: (patch: Partial<DiagramArrow>) => void;
   onPatchCell?: (patch: Partial<DiagramTwoCell>) => void;
 }) {
+  const language = useUiLanguage();
   const [draft, setDraft] = useState(item.value.label);
   const draftRef = useRef(item.value.label);
   const skipBlurCommit = useRef(false);
@@ -84,11 +86,21 @@ export function FloatingCellEditor({
                 : 'rounded bg-slate-100 px-1.5 py-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-600'
             }
           >
-            {item.kind === 'arrow' ? '1-cell' : '2-cell'}
+            {item.kind === 'arrow'
+              ? ui(language, '1-胞腔', '1-CELL')
+              : ui(language, '2-胞腔', '2-CELL')}
           </span>
           <Input
-            aria-label={`Edit ${item.kind === 'arrow' ? '1-cell' : '2-cell'} LaTeX label`}
-            title="LaTeX math source — delimiters are not required"
+            aria-label={ui(
+              language,
+              `编辑${item.kind === 'arrow' ? '一胞腔' : '二胞腔'}的 LaTeX 标签`,
+              `Edit ${item.kind === 'arrow' ? '1-cell' : '2-cell'} LaTeX label`,
+            )}
+            title={ui(
+              language,
+              '直接输入 LaTeX 数学源码，无需定界符',
+              'LaTeX math source — delimiters are not required',
+            )}
             placeholder="\\alpha_1"
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
@@ -115,13 +127,16 @@ export function FloatingCellEditor({
           />
         </div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-0.5" aria-label="Label face">
+          <div
+            className="flex items-center gap-0.5"
+            aria-label={ui(language, '文字样式', 'Label style')}
+          >
             {(
               [
-                ['math', 'M', 'Math italic'],
-                ['upright', 'T', 'Upright text'],
-                ['bold', 'B', 'Bold math'],
-                ['italic', 'I', 'Explicit italic'],
+                ['math', 'M', ui(language, '数学斜体', 'Math italic')],
+                ['upright', 'T', ui(language, '正体文字', 'Upright text')],
+                ['bold', 'B', ui(language, '数学粗体', 'Bold math')],
+                ['italic', 'I', ui(language, '显式斜体', 'Explicit italic')],
               ] as const
             ).map(([value, label, title]) => (
               <Button
@@ -148,7 +163,10 @@ export function FloatingCellEditor({
           </div>
 
           {item.kind === 'arrow' && onPatchArrow && (
-            <div className="flex items-center gap-0.5" aria-label="Label side">
+            <div
+              className="flex items-center gap-0.5"
+              aria-label={ui(language, '标签位置', 'Label side')}
+            >
               <Button
                 type="button"
                 size="xs"
@@ -156,10 +174,10 @@ export function FloatingCellEditor({
                   item.value.labelSide === 'left' ? 'secondary' : 'ghost'
                 }
                 aria-pressed={item.value.labelSide === 'left'}
-                title="Label above / left"
+                title={ui(language, '标签置于上方或左侧', 'Label above / left')}
                 onClick={() => onPatchArrow({ labelSide: 'left' })}
               >
-                Above
+                {ui(language, '上方', 'Above')}
               </Button>
               <Button
                 type="button"
@@ -168,10 +186,14 @@ export function FloatingCellEditor({
                   item.value.labelSide === 'right' ? 'secondary' : 'ghost'
                 }
                 aria-pressed={item.value.labelSide === 'right'}
-                title="Label below / right"
+                title={ui(
+                  language,
+                  '标签置于下方或右侧',
+                  'Label below / right',
+                )}
                 onClick={() => onPatchArrow({ labelSide: 'right' })}
               >
-                Below
+                {ui(language, '下方', 'Below')}
               </Button>
             </div>
           )}
@@ -185,30 +207,42 @@ export function FloatingCellEditor({
             size="xs"
             variant={connectionMode === 'auto' ? 'secondary' : 'ghost'}
             aria-pressed={connectionMode === 'auto'}
-            title="Infer the next cell level from its endpoints"
+            title={ui(
+              language,
+              '根据端点自动判断下一条连线的层级',
+              'Infer the next cell level from its endpoints',
+            )}
             onClick={() => onChooseLevel('auto')}
           >
-            Auto
+            {ui(language, '自动', 'Auto')}
           </Button>
           <Button
             type="button"
             size="xs"
             variant={connectionMode === 'arrow' ? 'secondary' : 'ghost'}
             aria-pressed={connectionMode === 'arrow'}
-            title="Draw the next connection as a 1-cell"
+            title={ui(
+              language,
+              '下一条连线绘制为一胞腔',
+              'Draw the next connection as a 1-cell',
+            )}
             onClick={() => onChooseLevel('arrow')}
           >
-            1-cell
+            {ui(language, '1-胞腔', '1-cell')}
           </Button>
           <Button
             type="button"
             size="xs"
             variant={connectionMode === 'cell' ? 'secondary' : 'ghost'}
             aria-pressed={connectionMode === 'cell'}
-            title="Draw the next connection as a 2-cell"
+            title={ui(
+              language,
+              '下一条连线绘制为二胞腔',
+              'Draw the next connection as a 2-cell',
+            )}
             onClick={() => onChooseLevel('cell')}
           >
-            2-cell
+            {ui(language, '2-胞腔', '2-cell')}
           </Button>
         </div>
 

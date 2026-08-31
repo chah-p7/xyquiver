@@ -96,6 +96,7 @@ import {
   type Point,
   type Selection,
 } from '@/lib/diagram';
+import { localizedDocumentTitle, ui, useUiLanguage } from '@/lib/i18n';
 
 interface HistoryState {
   past: DiagramDocument[];
@@ -210,6 +211,7 @@ function Inspector({
   onPatchCell: (id: string, patch: Partial<DiagramTwoCell>) => void;
   onDelete: () => void;
 }) {
+  const language = useUiLanguage();
   const node =
     selection?.kind === 'node'
       ? doc.nodes.find((item) => item.id === selection.id)
@@ -231,10 +233,14 @@ function Inspector({
             <MousePointer2 className="size-4" />
           </div>
           <p className="text-sm font-medium text-foreground">
-            Nothing selected
+            {ui(language, '尚未选择', 'Nothing selected')}
           </p>
           <p className="mt-1.5 text-xs leading-relaxed">
-            Select an object, arrow, or 2-cell to edit its LaTeX and geometry.
+            {ui(
+              language,
+              '选择对象、箭头或二胞腔，即可编辑 LaTeX 和几何属性。',
+              'Select an object, arrow, or 2-cell to edit its LaTeX and geometry.',
+            )}
           </p>
           <p className="mt-4 font-mono text-[10px] tracking-wide">
             V · O · A · T
@@ -249,10 +255,14 @@ function Inspector({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Selected
+            {ui(language, '已选择', 'Selected')}
           </p>
           <p className="mt-0.5 text-sm font-medium">
-            {node ? 'Object' : arrow ? '1-cell' : '2-cell'}
+            {node
+              ? ui(language, '对象', 'Object')
+              : arrow
+                ? ui(language, '一胞腔', '1-cell')
+                : ui(language, '二胞腔', '2-cell')}
           </p>
         </div>
         <Badge variant="outline" className="font-mono">
@@ -263,7 +273,9 @@ function Inspector({
       {node && (
         <>
           <div className="space-y-2">
-            <Label htmlFor="node-label">LaTeX label</Label>
+            <Label htmlFor="node-label">
+              {ui(language, 'LaTeX 标签', 'LaTeX label')}
+            </Label>
             <DraftInput
               id="node-label"
               value={node.label}
@@ -271,7 +283,9 @@ function Inspector({
               className="font-mono"
             />
             <p className="truncate font-serif text-sm text-muted-foreground">
-              Preview: {displayTex(node.label) || 'phantom anchor'}
+              {ui(language, '预览', 'Preview')}：
+              {displayTex(node.label) ||
+                ui(language, '占位点', 'phantom anchor')}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -310,9 +324,15 @@ function Inspector({
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
-              <p className="text-xs font-medium">Phantom anchor</p>
+              <p className="text-xs font-medium">
+                {ui(language, '空占位点', 'Phantom anchor')}
+              </p>
               <p className="mt-0.5 text-[10px] text-muted-foreground">
-                Useful for free-standing XY paths
+                {ui(
+                  language,
+                  '用于独立的 XY 路径',
+                  'Useful for free-standing XY paths',
+                )}
               </p>
             </div>
             <Switch
@@ -320,7 +340,7 @@ function Inspector({
               onCheckedChange={(checked) =>
                 onPatchNode(node.id, { ghost: Boolean(checked) })
               }
-              aria-label="Toggle phantom anchor"
+              aria-label={ui(language, '切换空占位点', 'Toggle phantom anchor')}
             />
           </div>
         </>
@@ -329,7 +349,9 @@ function Inspector({
       {arrow && (
         <>
           <div className="space-y-2">
-            <Label htmlFor="arrow-label">LaTeX label</Label>
+            <Label htmlFor="arrow-label">
+              {ui(language, 'LaTeX 标签', 'LaTeX label')}
+            </Label>
             <DraftInput
               id="arrow-label"
               value={arrow.label}
@@ -339,7 +361,7 @@ function Inspector({
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Label>Curvature</Label>
+              <Label>{ui(language, '弯曲度', 'Curvature')}</Label>
               <span className="font-mono text-[11px] text-muted-foreground">
                 {Math.round(arrow.curve)}
               </span>
@@ -356,28 +378,28 @@ function Inspector({
             />
           </div>
           <div className="space-y-2">
-            <Label>Arrow style</Label>
+            <Label>{ui(language, '箭头样式', 'Arrow style')}</Label>
             <ArrowStylePopover
               arrow={arrow}
               onPatch={(patch) => onPatchArrow(arrow.id, patch)}
             />
           </div>
           <div className="space-y-2">
-            <Label>Label side</Label>
+            <Label>{ui(language, '标签位置', 'Label side')}</Label>
             <div className="grid grid-cols-2 gap-1.5">
               <Button
                 size="sm"
                 variant={arrow.labelSide === 'left' ? 'secondary' : 'outline'}
                 onClick={() => onPatchArrow(arrow.id, { labelSide: 'left' })}
               >
-                Left / above
+                {ui(language, '左侧 / 上方', 'Left / above')}
               </Button>
               <Button
                 size="sm"
                 variant={arrow.labelSide === 'right' ? 'secondary' : 'outline'}
                 onClick={() => onPatchArrow(arrow.id, { labelSide: 'right' })}
               >
-                Right / below
+                {ui(language, '右侧 / 下方', 'Right / below')}
               </Button>
             </div>
           </div>
@@ -393,7 +415,7 @@ function Inspector({
             }
           >
             <ArrowLeftRight data-icon="inline-start" />
-            Reverse direction
+            {ui(language, '反转方向', 'Reverse direction')}
           </Button>
         </>
       )}
@@ -401,7 +423,9 @@ function Inspector({
       {cell && (
         <>
           <div className="space-y-2">
-            <Label htmlFor="cell-label">LaTeX label</Label>
+            <Label htmlFor="cell-label">
+              {ui(language, 'LaTeX 标签', 'LaTeX label')}
+            </Label>
             <DraftInput
               id="cell-label"
               value={cell.label}
@@ -411,20 +435,26 @@ function Inspector({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border bg-muted/35 p-2.5">
-              <p className="text-[10px] text-muted-foreground">Source</p>
+              <p className="text-[10px] text-muted-foreground">
+                {ui(language, '源', 'Source')}
+              </p>
               <p className="mt-1 truncate font-serif text-sm">
                 {anchorName(doc, cellSourceAnchor(cell))}
               </p>
             </div>
             <div className="rounded-lg border bg-muted/35 p-2.5">
-              <p className="text-[10px] text-muted-foreground">Target</p>
+              <p className="text-[10px] text-muted-foreground">
+                {ui(language, '目标', 'Target')}
+              </p>
               <p className="mt-1 truncate font-serif text-sm">
                 {anchorName(doc, cellTargetAnchor(cell))}
               </p>
             </div>
           </div>
           <div className="space-y-2">
-            <Label>2-cell arrow style</Label>
+            <Label>
+              {ui(language, '二胞腔箭头样式', '2-cell arrow style')}
+            </Label>
             <CellStylePopover
               cell={cell}
               onPatch={(patch) => onPatchCell(cell.id, patch)}
@@ -433,14 +463,26 @@ function Inspector({
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-950">
             {isNativeParallelCell(doc, cell) ? (
               <>
-                Native parallel mapping:{' '}
+                {ui(language, '原生平行映射', 'Native parallel mapping')}：{' '}
                 <code className="font-mono">\\xtwocell</code>
               </>
             ) : cellBoundaryPaths(cell).source.length === 2 ||
               cellBoundaryPaths(cell).target.length === 2 ? (
-              <>Composite boundary with an exact named path anchor in Xy-pic</>
+              <>
+                {ui(
+                  language,
+                  '复合边界，并在 Xy-pic 中使用精确命名的路径锚点',
+                  'Composite boundary with an exact named path anchor in Xy-pic',
+                )}
+              </>
             ) : (
-              <>General native 2-cell between attached anchors</>
+              <>
+                {ui(
+                  language,
+                  '附着锚点之间的一般原生二胞腔',
+                  'General native 2-cell between attached anchors',
+                )}
+              </>
             )}
           </div>
           <Button
@@ -458,7 +500,11 @@ function Inspector({
             }
           >
             <ArrowLeftRight data-icon="inline-start" />
-            Swap source and target boundaries
+            {ui(
+              language,
+              '交换源边界与目标边界',
+              'Swap source and target boundaries',
+            )}
           </Button>
         </>
       )}
@@ -466,7 +512,7 @@ function Inspector({
       <Separator />
       <Button variant="destructive" className="w-full" onClick={onDelete}>
         <Trash2 data-icon="inline-start" />
-        Delete selected
+        {ui(language, '删除所选内容', 'Delete selected')}
       </Button>
     </div>
   );
@@ -479,6 +525,7 @@ function ExportDialog({
   doc: DiagramDocument;
   onStatus: (status: string) => void;
 }) {
+  const language = useUiLanguage();
   const [mode, setMode] = useState<'typora' | 'snippet' | 'latex'>('typora');
   const [background, setBackground] = useState(false);
   const xy = useMemo(() => generateXyPic(doc, mode), [doc, mode]);
@@ -496,8 +543,16 @@ function ExportDialog({
     await navigator.clipboard.writeText(value);
     onStatus(
       warnings.length > 0
-        ? `${label} copied with ${warnings.length} warning(s): ${warnings[0]}`
-        : `${label} copied to clipboard.`,
+        ? ui(
+            language,
+            `${label} 已复制，但有 ${warnings.length} 条警告：${warnings[0]}`,
+            `${label} copied with ${warnings.length} warning(s): ${warnings[0]}`,
+          )
+        : ui(
+            language,
+            `${label} 已复制到剪贴板。`,
+            `${label} copied to clipboard.`,
+          ),
     );
   };
 
@@ -505,13 +560,19 @@ function ExportDialog({
     <Dialog>
       <DialogTrigger render={<Button size="sm" />}>
         <Download data-icon="inline-start" />
-        Export
+        {ui(language, '导出', 'Export')}
       </DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-hidden sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Source and export</DialogTitle>
+          <DialogTitle>
+            {ui(language, '源码与导出', 'Source and export')}
+          </DialogTitle>
           <DialogDescription>
-            Preview, copy, or download every output format from one place.
+            {ui(
+              language,
+              '在一个位置预览、复制或下载所有输出格式。',
+              'Preview, copy, or download every output format from one place.',
+            )}
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="xypic" className="min-h-0">
@@ -530,10 +591,10 @@ function ExportDialog({
                   onClick={() => setMode(item)}
                 >
                   {item === 'typora'
-                    ? 'Typora / XyJax'
+                    ? ui(language, 'Typora / XyJax', 'Typora / XyJax')
                     : item === 'snippet'
-                      ? 'XY snippet'
-                      : 'Full LaTeX'}
+                      ? ui(language, 'XY 片段', 'XY snippet')
+                      : ui(language, '完整 LaTeX', 'Full LaTeX')}
                 </Button>
               ))}
             </div>
@@ -554,7 +615,7 @@ function ExportDialog({
                 onClick={() => copy(xy.text, 'Xy-pic', xy.warnings)}
               >
                 <Copy data-icon="inline-start" />
-                Copy
+                {ui(language, '复制', 'Copy')}
               </Button>
               <Button
                 onClick={() =>
@@ -562,22 +623,32 @@ function ExportDialog({
                 }
               >
                 <Download data-icon="inline-start" />
-                Download .tex
+                {ui(language, '下载 .tex', 'Download .tex')}
               </Button>
             </div>
           </TabsContent>
           <TabsContent value="svg" className="min-h-0 space-y-3">
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
-                <p className="text-sm font-medium">White background</p>
+                <p className="text-sm font-medium">
+                  {ui(language, '白色背景', 'White background')}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  Off exports a transparent SVG.
+                  {ui(
+                    language,
+                    '关闭时导出透明 SVG。',
+                    'Off exports a transparent SVG.',
+                  )}
                 </p>
               </div>
               <Switch
                 checked={background}
                 onCheckedChange={(checked) => setBackground(Boolean(checked))}
-                aria-label="Toggle SVG background"
+                aria-label={ui(
+                  language,
+                  '切换 SVG 背景',
+                  'Toggle SVG background',
+                )}
               />
             </div>
             <div
@@ -585,13 +656,16 @@ function ExportDialog({
               dangerouslySetInnerHTML={{ __html: svg }}
             />
             <p className="text-xs text-muted-foreground">
-              True vector curves, arrowheads, and editable text; no raster image
-              is embedded.
+              {ui(
+                language,
+                '包含真正的矢量曲线、箭头和可编辑文字，不嵌入位图。',
+                'True vector curves, arrowheads, and editable text; no raster image is embedded.',
+              )}
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => copy(svg, 'SVG')}>
                 <Copy data-icon="inline-start" />
-                Copy SVG
+                {ui(language, '复制 SVG', 'Copy SVG')}
               </Button>
               <Button
                 onClick={() =>
@@ -599,7 +673,7 @@ function ExportDialog({
                 }
               >
                 <Download data-icon="inline-start" />
-                Download .svg
+                {ui(language, '下载 .svg', 'Download .svg')}
               </Button>
             </div>
           </TabsContent>
@@ -613,7 +687,7 @@ function ExportDialog({
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => copy(json, 'JSON')}>
                 <Copy data-icon="inline-start" />
-                Copy JSON
+                {ui(language, '复制 JSON', 'Copy JSON')}
               </Button>
               <Button
                 onClick={() =>
@@ -625,14 +699,17 @@ function ExportDialog({
                 }
               >
                 <FileJson data-icon="inline-start" />
-                Download .json
+                {ui(language, '下载 .json', 'Download .json')}
               </Button>
             </div>
           </TabsContent>
         </Tabs>
         <DialogFooter className="text-xs text-muted-foreground sm:justify-start">
-          SVG bounds are cropped from diagram geometry, including curved arrows
-          and labels.
+          {ui(
+            language,
+            'SVG 边界会依据图形几何自动裁剪，并包含弯曲箭头与标签。',
+            'SVG bounds are cropped from diagram geometry, including curved arrows and labels.',
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -640,6 +717,7 @@ function ExportDialog({
 }
 
 export function XyQuiverShell() {
+  const language = useUiLanguage();
   const [history, setHistory] = useState<HistoryState>(() => ({
     past: [],
     present: cloneDocument(exampleDocuments.quasicategory),
@@ -653,13 +731,19 @@ export function XyQuiverShell() {
   const [pendingNode, setPendingNode] = useState<NodeId | null>(null);
   const [pendingArrow, setPendingArrow] = useState<ArrowId | null>(null);
   const [canvasCancelEpoch, setCanvasCancelEpoch] = useState(0);
-  const [status, setStatus] = useState(
-    'Drag to draw: endpoints infer the level; double-click empty space to create an object.',
-  );
+  const [status, setStatus] = useState('');
   const importRef = useRef<HTMLInputElement>(null);
   const doc = history.present;
   const selection = selections.at(-1) ?? null;
   const grid = useMemo(() => matrixAxes(doc, true), [doc]);
+  const documentTitle = localizedDocumentTitle(doc.title, language);
+  const visibleStatus =
+    status ||
+    ui(
+      language,
+      '拖动即可绘制，端点会自动判断层级；双击空白处创建对象。',
+      'Drag to draw: endpoints infer the level; double-click empty space to create an object.',
+    );
 
   const cancelCanvasGesture = useCallback(
     () => setCanvasCancelEpoch((current) => current + 1),
@@ -698,8 +782,8 @@ export function XyQuiverShell() {
     setEditing(null);
     setPendingNode(null);
     setPendingArrow(null);
-    setStatus('Undid last change.');
-  }, [cancelCanvasGesture]);
+    setStatus(ui(language, '已撤销上一步。', 'Undid last change.'));
+  }, [cancelCanvasGesture, language]);
 
   const redo = useCallback(() => {
     cancelCanvasGesture();
@@ -714,8 +798,8 @@ export function XyQuiverShell() {
     });
     setSelections([]);
     setEditing(null);
-    setStatus('Redid change.');
-  }, [cancelCanvasGesture]);
+    setStatus(ui(language, '已重做。', 'Redid change.'));
+  }, [cancelCanvasGesture, language]);
 
   const loadDocument = useCallback(
     (next: DiagramDocument, message: string) => {
@@ -733,6 +817,9 @@ export function XyQuiverShell() {
   );
 
   useEffect(() => {
+    const restoredLanguage = /^zh(?:-|$)/i.test(navigator.language)
+      ? 'zh'
+      : 'en';
     try {
       const stored = localStorage.getItem(storageKey);
       if (!stored) return;
@@ -740,11 +827,17 @@ export function XyQuiverShell() {
       if (restored) {
         setHistory({ past: [], present: restored, future: [] });
         setSelections([]);
-        setStatus('Restored local draft.');
+        setStatus(
+          ui(restoredLanguage, '已恢复本地草稿。', 'Restored local draft.'),
+        );
       }
     } catch {
       setStatus(
-        'The saved draft could not be restored; the example is still available.',
+        ui(
+          restoredLanguage,
+          '无法恢复保存的草稿，仍可使用示例图。',
+          'The saved draft could not be restored; the example is still available.',
+        ),
       );
     }
   }, []);
@@ -791,9 +884,13 @@ export function XyQuiverShell() {
     setSelections([]);
     setEditing(null);
     setStatus(
-      `Deleted ${count} selected ${count === 1 ? 'element' : 'elements'}.`,
+      ui(
+        language,
+        `已删除 ${count} 个所选元素。`,
+        `Deleted ${count} selected ${count === 1 ? 'element' : 'elements'}.`,
+      ),
     );
-  }, [commit, selections]);
+  }, [commit, language, selections]);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -824,7 +921,11 @@ export function XyQuiverShell() {
       ) {
         event.preventDefault();
         setShowGrid((current) => {
-          setStatus(current ? 'Matrix grid hidden.' : 'Matrix grid shown.');
+          setStatus(
+            current
+              ? ui(language, '矩阵网格已隐藏。', 'Matrix grid hidden.')
+              : ui(language, '矩阵网格已显示。', 'Matrix grid shown.'),
+          );
           return !current;
         });
         return;
@@ -855,7 +956,9 @@ export function XyQuiverShell() {
         setPendingArrow(null);
         setEditing(null);
         setSelections([]);
-        setStatus('Cancelled current action.');
+        setStatus(
+          ui(language, '已取消当前操作。', 'Cancelled current action.'),
+        );
       }
       if (event.key === 'Enter' && selection) {
         event.preventDefault();
@@ -864,7 +967,7 @@ export function XyQuiverShell() {
     };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [cancelCanvasGesture, deleteSelected, redo, selection, undo]);
+  }, [cancelCanvasGesture, deleteSelected, language, redo, selection, undo]);
 
   const patchNode = useCallback(
     (id: NodeId, patch: Partial<DiagramNode>) => {
@@ -893,7 +996,11 @@ export function XyQuiverShell() {
       });
       if (cell && (patch.source || patch.target)) {
         setStatus(
-          'Reverse or retarget both boundary arrows before changing this 2-cell.',
+          ui(
+            language,
+            '请先同时反转或重定向两条边界箭头，再修改这个二胞腔。',
+            'Reverse or retarget both boundary arrows before changing this 2-cell.',
+          ),
         );
         return;
       }
@@ -913,7 +1020,7 @@ export function XyQuiverShell() {
         ),
       }));
     },
-    [commit, doc.cells],
+    [commit, doc.cells, language],
   );
 
   const patchCell = useCallback(
@@ -944,16 +1051,24 @@ export function XyQuiverShell() {
         (node) => node.x === next.x && node.y === next.y,
       );
       if (occupied) {
-        setStatus('That grid position already contains an object.');
+        setStatus(
+          ui(
+            language,
+            '该网格位置已经存在对象。',
+            'That grid position already contains an object.',
+          ),
+        );
         return;
       }
       commit((current) => ({ ...current, nodes: [...current.nodes, next] }));
       const nextSelection: Selection = { kind: 'node', id: next.id };
       setSelections([nextSelection]);
       setEditing(nextSelection);
-      setStatus(`Created object ${label}.`);
+      setStatus(
+        ui(language, `已创建对象 ${label}。`, `Created object ${label}.`),
+      );
     },
-    [commit, doc],
+    [commit, doc, language],
   );
 
   const handleNodeAction = useCallback(
@@ -964,11 +1079,23 @@ export function XyQuiverShell() {
       }
       if (!pendingNode) {
         setPendingNode(id);
-        setStatus('Choose the target object for the 1-cell.');
+        setStatus(
+          ui(
+            language,
+            '请选择一胞腔的目标对象。',
+            'Choose the target object for the 1-cell.',
+          ),
+        );
         return;
       }
       if (pendingNode === id) {
-        setStatus('Self-loops are reserved for the low-level XY editor.');
+        setStatus(
+          ui(
+            language,
+            '自环请使用底层 XY 编辑器。',
+            'Self-loops are reserved for the low-level XY editor.',
+          ),
+        );
         return;
       }
       const existing = doc.arrows.filter(
@@ -1001,9 +1128,11 @@ export function XyQuiverShell() {
       const nextSelection: Selection = { kind: 'arrow', id: nextId };
       setSelections([nextSelection]);
       setEditing(nextSelection);
-      setStatus(`Created 1-cell ${label}.`);
+      setStatus(
+        ui(language, `已创建一胞腔 ${label}。`, `Created 1-cell ${label}.`),
+      );
     },
-    [commit, doc.arrows, pendingNode, tool],
+    [commit, doc.arrows, language, pendingNode, tool],
   );
 
   const handleArrowAction = useCallback(
@@ -1015,7 +1144,11 @@ export function XyQuiverShell() {
       if (!pendingArrow) {
         setPendingArrow(id);
         setStatus(
-          'Click a parallel target for a native 2-cell, or drag for a general attached 2-cell.',
+          ui(
+            language,
+            '点击平行目标以创建原生二胞腔，或拖动以创建一般附着二胞腔。',
+            'Click a parallel target for a native 2-cell, or drag for a general attached 2-cell.',
+          ),
         );
         return;
       }
@@ -1027,7 +1160,11 @@ export function XyQuiverShell() {
         !areParallel(sourceArrow, targetArrow)
       ) {
         setStatus(
-          'The click workflow needs parallel arrows; drag between anchors for a general 2-cell.',
+          ui(
+            language,
+            '点击流程要求两条箭头平行；一般二胞腔请在锚点之间拖动。',
+            'The click workflow needs parallel arrows; drag between anchors for a general 2-cell.',
+          ),
         );
         setPendingArrow(null);
         return;
@@ -1040,8 +1177,16 @@ export function XyQuiverShell() {
       if (conflict) {
         setStatus(
           conflict === 'duplicate'
-            ? 'That 2-cell boundary pair already exists.'
-            : 'One of those arrows already bounds a native 2-cell.',
+            ? ui(
+                language,
+                '这对二胞腔边界已经存在。',
+                'That 2-cell boundary pair already exists.',
+              )
+            : ui(
+                language,
+                '其中一条箭头已经是原生二胞腔的边界。',
+                'One of those arrows already bounds a native 2-cell.',
+              ),
         );
         setPendingArrow(null);
         return;
@@ -1090,9 +1235,15 @@ export function XyQuiverShell() {
       const nextSelection: Selection = { kind: 'cell', id: nextId };
       setSelections([nextSelection]);
       setEditing(nextSelection);
-      setStatus(`Created native 2-cell ${displayTex(label)}.`);
+      setStatus(
+        ui(
+          language,
+          `已创建原生二胞腔 ${displayTex(label)}。`,
+          `Created native 2-cell ${displayTex(label)}.`,
+        ),
+      );
     },
-    [commit, doc, pendingArrow, tool],
+    [commit, doc, language, pendingArrow, tool],
   );
 
   const moveNodes = useCallback(
@@ -1104,10 +1255,14 @@ export function XyQuiverShell() {
         ),
       }));
       setStatus(
-        `Moved ${Object.keys(positions).length} ${Object.keys(positions).length === 1 ? 'object' : 'objects'}.`,
+        ui(
+          language,
+          `已移动 ${Object.keys(positions).length} 个对象。`,
+          `Moved ${Object.keys(positions).length} ${Object.keys(positions).length === 1 ? 'object' : 'objects'}.`,
+        ),
       );
     },
-    [commit],
+    [commit, language],
   );
 
   const setArrowCurve = useCallback(
@@ -1121,9 +1276,15 @@ export function XyQuiverShell() {
             : arrow,
         ),
       }));
-      setStatus(`Curvature set to ${Math.round(constrained)}.`);
+      setStatus(
+        ui(
+          language,
+          `弯曲度已设为 ${Math.round(constrained)}。`,
+          `Curvature set to ${Math.round(constrained)}.`,
+        ),
+      );
     },
-    [commit, doc],
+    [commit, doc, language],
   );
 
   const commitLabel = useCallback(
@@ -1151,9 +1312,9 @@ export function XyQuiverShell() {
               },
       );
       setEditing(null);
-      setStatus('Updated LaTeX label.');
+      setStatus(ui(language, 'LaTeX 标签已更新。', 'Updated LaTeX label.'));
     },
-    [commit],
+    [commit, language],
   );
 
   const quickConnect = useCallback(
@@ -1164,7 +1325,15 @@ export function XyQuiverShell() {
         requested,
       );
       if (connectionError) {
-        setStatus(connectionError);
+        setStatus(
+          connectionError.startsWith('A 1-cell')
+            ? ui(
+                language,
+                '一胞腔的端点必须是对象；若要附着到箭头，请选择二胞腔。',
+                connectionError,
+              )
+            : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
+        );
         return;
       }
       const anchorExists = (anchor: CanvasAnchor) =>
@@ -1173,7 +1342,13 @@ export function XyQuiverShell() {
           ? doc.nodes.some((node) => node.id === anchor.id)
           : doc.arrows.some((arrow) => arrow.id === anchor.id));
       if (!anchorExists(source) || !anchorExists(target)) {
-        setStatus('That gesture referenced an object that no longer exists.');
+        setStatus(
+          ui(
+            language,
+            '该手势引用的对象已经不存在。',
+            'That gesture referenced an object that no longer exists.',
+          ),
+        );
         return;
       }
       const mode =
@@ -1209,7 +1384,13 @@ export function XyQuiverShell() {
         const sourceId = resolveNode(source, 0);
         const targetId = resolveNode(target, newNodes.length);
         if (!sourceId || !targetId || sourceId === targetId) {
-          setStatus('Choose two different object anchors for a 1-cell.');
+          setStatus(
+            ui(
+              language,
+              '请为一胞腔选择两个不同的对象锚点。',
+              'Choose two different object anchors for a 1-cell.',
+            ),
+          );
           return;
         }
         const nextId = makeId('arrow');
@@ -1249,8 +1430,16 @@ export function XyQuiverShell() {
         setEditing(nextSelection);
         setStatus(
           newNodes.length > 0
-            ? `Created ${newNodes.length} ${newNodes.length === 1 ? 'object' : 'objects'} and 1-cell ${label}.`
-            : `Created 1-cell ${label}.`,
+            ? ui(
+                language,
+                `已创建 ${newNodes.length} 个对象和一胞腔 ${label}。`,
+                `Created ${newNodes.length} ${newNodes.length === 1 ? 'object' : 'objects'} and 1-cell ${label}.`,
+              )
+            : ui(
+                language,
+                `已创建一胞腔 ${label}。`,
+                `Created 1-cell ${label}.`,
+              ),
         );
         return;
       }
@@ -1276,15 +1465,29 @@ export function XyQuiverShell() {
         sourceAnchor.kind === targetAnchor.kind &&
         sourceAnchor.id === targetAnchor.id
       ) {
-        setStatus('Choose two different anchors for a 2-cell.');
+        setStatus(
+          ui(
+            language,
+            '请为二胞腔选择两个不同的锚点。',
+            'Choose two different anchors for a 2-cell.',
+          ),
+        );
         return;
       }
       const conflict = cellCreationConflict(doc, sourceAnchor, targetAnchor);
       if (conflict) {
         setStatus(
           conflict === 'duplicate'
-            ? 'That 2-cell boundary pair already exists.'
-            : 'One of those arrows already bounds a native 2-cell.',
+            ? ui(
+                language,
+                '这对二胞腔边界已经存在。',
+                'That 2-cell boundary pair already exists.',
+              )
+            : ui(
+                language,
+                '其中一条箭头已经是原生二胞腔的边界。',
+                'One of those arrows already bounds a native 2-cell.',
+              ),
         );
         return;
       }
@@ -1361,13 +1564,25 @@ export function XyQuiverShell() {
       setEditing(nextSelection);
       setStatus(
         nativeParallel
-          ? `Created native parallel 2-cell ${displayTex(label)}.`
+          ? ui(
+              language,
+              `已创建原生平行二胞腔 ${displayTex(label)}。`,
+              `Created native parallel 2-cell ${displayTex(label)}.`,
+            )
           : sourceAnchor.kind === 'node' && targetAnchor.kind === 'arrow'
-            ? `Created attached 2-cell ${displayTex(label)} from the vertex to the opposite edge.`
-            : `Created general attached 2-cell ${displayTex(label)}.`,
+            ? ui(
+                language,
+                `已创建从顶点到对边的附着二胞腔 ${displayTex(label)}。`,
+                `Created attached 2-cell ${displayTex(label)} from the vertex to the opposite edge.`,
+              )
+            : ui(
+                language,
+                `已创建一般附着二胞腔 ${displayTex(label)}。`,
+                `Created general attached 2-cell ${displayTex(label)}.`,
+              ),
       );
     },
-    [commit, doc],
+    [commit, doc, language],
   );
 
   const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1377,9 +1592,18 @@ export function XyQuiverShell() {
     try {
       const parsed = validateDocument(JSON.parse(await file.text()));
       if (!parsed) throw new Error('Invalid document');
-      loadDocument(parsed, `Opened ${file.name}.`);
+      loadDocument(
+        parsed,
+        ui(language, `已打开 ${file.name}。`, `Opened ${file.name}.`),
+      );
     } catch {
-      setStatus('That file is not a valid XyQuiver document.');
+      setStatus(
+        ui(
+          language,
+          '该文件不是有效的 XyQuiver 文档。',
+          'That file is not a valid XyQuiver document.',
+        ),
+      );
     }
   };
 
@@ -1393,12 +1617,28 @@ export function XyQuiverShell() {
     setPendingArrow(null);
     setStatus(
       next === 'object'
-        ? 'Click the canvas to create an object.'
+        ? ui(
+            language,
+            '点击画布创建对象。',
+            'Click the canvas to create an object.',
+          )
         : next === 'arrow'
-          ? 'Level 1 override: drag between object or grid anchors.'
+          ? ui(
+              language,
+              '强制层级 1：在对象或网格锚点之间拖动。',
+              'Level 1 override: drag between object or grid anchors.',
+            )
           : next === 'cell'
-            ? 'Level 2 override: drag between object or arrow anchors.'
-            : 'Drag to draw with automatic level; double-click empty space for an object.',
+            ? ui(
+                language,
+                '强制层级 2：在对象或箭头锚点之间拖动。',
+                'Level 2 override: drag between object or arrow anchors.',
+              )
+            : ui(
+                language,
+                '拖动时自动判断层级；双击空白处创建对象。',
+                'Drag to draw with automatic level; double-click empty space for an object.',
+              ),
     );
   };
 
@@ -1410,10 +1650,22 @@ export function XyQuiverShell() {
     setPendingArrow(null);
     setStatus(
       mode === 'auto'
-        ? 'Automatic level: endpoint dimensions choose 1-cell or 2-cell.'
+        ? ui(
+            language,
+            '自动层级：根据端点维度选择一胞腔或二胞腔。',
+            'Automatic level: endpoint dimensions choose 1-cell or 2-cell.',
+          )
         : mode === 'arrow'
-          ? 'Level 1 override: drag between object or grid anchors.'
-          : 'Level 2 override: drag between any two object or arrow anchors.',
+          ? ui(
+              language,
+              '强制层级 1：在对象或网格锚点之间拖动。',
+              'Level 1 override: drag between object or grid anchors.',
+            )
+          : ui(
+              language,
+              '强制层级 2：在任意两个对象或箭头锚点之间拖动。',
+              'Level 2 override: drag between any two object or arrow anchors.',
+            ),
     );
   };
 
@@ -1432,7 +1684,7 @@ export function XyQuiverShell() {
               XyQuiver
             </p>
             <h1 className="max-w-44 truncate text-sm font-medium tracking-[-0.01em] sm:max-w-64">
-              {doc.title}
+              {ui(language, '高阶交换图编辑器', 'Higher diagram editor')}
             </h1>
           </div>
         </div>
@@ -1443,8 +1695,16 @@ export function XyQuiverShell() {
         />
 
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-            Examples
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="max-w-52 justify-between"
+              />
+            }
+          >
+            <span className="truncate">{documentTitle}</span>
             <ChevronDown data-icon="inline-end" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64">
@@ -1454,17 +1714,21 @@ export function XyQuiverShell() {
                 onClick={() =>
                   loadDocument(
                     exampleDocuments[example.id],
-                    `Loaded ${example.label}.`,
+                    ui(
+                      language,
+                      `已载入${localizedDocumentTitle(example.label, language)}。`,
+                      `Loaded ${example.label}.`,
+                    ),
                   )
                 }
               >
-                {example.label}
+                {localizedDocumentTitle(example.label, language)}
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => importRef.current?.click()}>
               <FolderOpen />
-              Open XyQuiver JSON…
+              {ui(language, '打开 XyQuiver JSON…', 'Open XyQuiver JSON…')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1473,8 +1737,8 @@ export function XyQuiverShell() {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Undo"
-            title="Undo (Ctrl+Z)"
+            aria-label={ui(language, '撤销', 'Undo')}
+            title={ui(language, '撤销（Ctrl+Z）', 'Undo (Ctrl+Z)')}
             disabled={history.past.length === 0}
             onClick={undo}
           >
@@ -1483,8 +1747,8 @@ export function XyQuiverShell() {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Redo"
-            title="Redo (Ctrl+Shift+Z)"
+            aria-label={ui(language, '重做', 'Redo')}
+            title={ui(language, '重做（Ctrl+Shift+Z）', 'Redo (Ctrl+Shift+Z)')}
             disabled={history.future.length === 0}
             onClick={redo}
           >
@@ -1499,19 +1763,25 @@ export function XyQuiverShell() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label="Open inspector"
-                  title="Inspector"
+                  aria-label={ui(language, '打开检查器', 'Open inspector')}
+                  title={ui(language, '检查器', 'Inspector')}
                 />
               }
             >
               <SlidersHorizontal data-icon="inline-start" />
-              <span className="hidden md:inline">Inspect</span>
+              <span className="hidden md:inline">
+                {ui(language, '检查', 'Inspect')}
+              </span>
             </SheetTrigger>
             <SheetContent className="gap-0 overflow-hidden bg-card sm:max-w-[340px]">
               <SheetHeader className="border-b pr-12">
-                <SheetTitle>Inspector</SheetTitle>
+                <SheetTitle>{ui(language, '检查器', 'Inspector')}</SheetTitle>
                 <SheetDescription>
-                  Edit the selected cell without shrinking the canvas.
+                  {ui(
+                    language,
+                    '在不缩小画布的情况下编辑所选元素。',
+                    'Edit the selected cell without shrinking the canvas.',
+                  )}
                 </SheetDescription>
               </SheetHeader>
               <div className="min-h-0 flex-1 overflow-auto">
@@ -1538,22 +1808,39 @@ export function XyQuiverShell() {
       </header>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-canvas-grid">
-        <section className="absolute inset-0" aria-label="Diagram editor">
+        <section
+          className="absolute inset-0"
+          aria-label={ui(language, '交换图编辑器', 'Diagram editor')}
+        >
           <div className="absolute left-[78px] top-4 z-10 hidden items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground sm:flex">
             <span className="font-semibold text-foreground">
               {tool === 'select'
-                ? 'Drag to draw · level auto'
+                ? ui(
+                    language,
+                    '拖动绘制 · 自动层级',
+                    'Drag to draw · level auto',
+                  )
                 : tool === 'object'
-                  ? 'Place object'
+                  ? ui(language, '放置对象', 'Place object')
                   : tool === 'arrow'
-                    ? 'Drag to draw · level 1 override'
-                    : 'Drag to draw · level 2 override'}
+                    ? ui(
+                        language,
+                        '拖动绘制 · 强制层级 1',
+                        'Drag to draw · level 1 override',
+                      )
+                    : ui(
+                        language,
+                        '拖动绘制 · 强制层级 2',
+                        'Drag to draw · level 2 override',
+                      )}
             </span>
             <span className="text-border">/</span>
             <span>
-              {grid.columns.length}×{grid.rows.length} matrix ·{' '}
-              {doc.nodes.length} objects · {doc.arrows.length} arrows ·{' '}
-              {doc.cells.length} 2-cells
+              {grid.columns.length}×{grid.rows.length}{' '}
+              {ui(language, '矩阵', 'matrix')} · {doc.nodes.length}{' '}
+              {ui(language, '个对象', 'objects')} · {doc.arrows.length}{' '}
+              {ui(language, '条箭头', 'arrows')} · {doc.cells.length}{' '}
+              {ui(language, '个二胞腔', '2-cells')}
             </span>
           </div>
 
@@ -1582,6 +1869,7 @@ export function XyQuiverShell() {
             onQuickConnect={quickConnect}
             onMoveNodes={moveNodes}
             onSetArrowCurve={setArrowCurve}
+            onPatchNode={patchNode}
             onPatchArrow={patchArrow}
             onPatchCell={patchCell}
             onChooseConnectionMode={chooseConnectionMode}
@@ -1595,44 +1883,62 @@ export function XyQuiverShell() {
           />
 
           <div className="pointer-events-none absolute bottom-3 left-[78px] z-10 max-w-[52vw] truncate rounded-md border bg-card/88 px-2.5 py-1.5 text-[10px] text-muted-foreground shadow-sm backdrop-blur">
-            {status}
+            {visibleStatus}
           </div>
         </section>
 
         <nav
-          aria-label="Diagram tools"
+          aria-label={ui(language, '交换图工具', 'Diagram tools')}
           className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border bg-card/92 p-1.5 shadow-[0_8px_28px_rgb(45_37_32/10%)] backdrop-blur"
         >
-          {tools.map(({ id, label, key, icon: Icon }) => (
-            <Button
-              key={id}
-              variant={tool === id ? 'secondary' : 'ghost'}
-              size="icon-lg"
-              className={
-                tool === id
-                  ? 'bg-accent text-primary shadow-none'
-                  : 'text-muted-foreground'
-              }
-              aria-label={`${label} tool`}
-              aria-pressed={tool === id}
-              title={`${label} (${key})`}
-              onClick={() => switchTool(id)}
-            >
-              <Icon />
-            </Button>
-          ))}
+          {tools.map(({ id, label, key, icon: Icon }) =>
+            (() => {
+              const localizedLabel =
+                id === 'select'
+                  ? ui(language, '选择', label)
+                  : ui(language, '对象', label);
+              return (
+                <Button
+                  key={id}
+                  variant={tool === id ? 'secondary' : 'ghost'}
+                  size="icon-lg"
+                  className={
+                    tool === id
+                      ? 'bg-accent text-primary shadow-none'
+                      : 'text-muted-foreground'
+                  }
+                  aria-label={`${localizedLabel}${ui(language, '工具', ' tool')}`}
+                  aria-pressed={tool === id}
+                  title={`${localizedLabel} (${key})`}
+                  onClick={() => switchTool(id)}
+                >
+                  <Icon />
+                </Button>
+              );
+            })(),
+          )}
           <Separator className="my-2 w-7" />
           <Button
             variant={showGrid ? 'secondary' : 'ghost'}
             size="icon-lg"
             className={showGrid ? 'text-primary' : 'text-muted-foreground'}
-            aria-label={showGrid ? 'Hide matrix grid' : 'Show matrix grid'}
+            aria-label={
+              showGrid
+                ? ui(language, '隐藏矩阵网格', 'Hide matrix grid')
+                : ui(language, '显示矩阵网格', 'Show matrix grid')
+            }
             aria-pressed={showGrid}
-            title={showGrid ? 'Hide matrix grid (G)' : 'Show matrix grid (G)'}
+            title={
+              showGrid
+                ? ui(language, '隐藏矩阵网格（G）', 'Hide matrix grid (G)')
+                : ui(language, '显示矩阵网格（G）', 'Show matrix grid (G)')
+            }
             onClick={() => {
               setShowGrid((current) => !current);
               setStatus(
-                showGrid ? 'Matrix grid hidden.' : 'Matrix grid shown.',
+                showGrid
+                  ? ui(language, '矩阵网格已隐藏。', 'Matrix grid hidden.')
+                  : ui(language, '矩阵网格已显示。', 'Matrix grid shown.'),
               );
             }}
           >
@@ -1649,7 +1955,7 @@ export function XyQuiverShell() {
       </div>
 
       <output className="sr-only" aria-live="polite" aria-atomic="true">
-        {status}
+        {visibleStatus}
       </output>
     </main>
   );

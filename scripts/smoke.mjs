@@ -11,6 +11,15 @@ import {
   normalizeMathTex,
   validateDocument,
 } from '../lib/diagram.ts';
+import { localizedDocumentTitle } from '../lib/i18n.ts';
+
+if (
+  localizedDocumentTitle('Homotopy stabilization', 'zh') !== '同伦稳定化' ||
+  localizedDocumentTitle('Homotopy stabilization', 'en') !==
+    'Homotopy stabilization'
+) {
+  throw new Error('i18n: document titles did not follow the UI language');
+}
 
 if (
   normalizeMathTex('$$\\mathbf{F}$$') !== '\\mathbf{F}' ||

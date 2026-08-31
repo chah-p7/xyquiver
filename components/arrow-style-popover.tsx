@@ -17,6 +17,7 @@ import {
   type ArrowTail,
   type DiagramArrow,
 } from '@/lib/diagram';
+import { ui, useUiLanguage, type UiLanguage } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 const arrowStrokeOptions: Array<{ value: ArrowStroke; label: string }> = [
@@ -112,17 +113,34 @@ function ArrowStyleChoice({
   );
 }
 
-function arrowStyleSummary(arrow: DiagramArrow) {
+function optionLabel(language: UiLanguage, value: string, fallback: string) {
+  const chinese: Record<string, string> = {
+    solid: '实线',
+    dashed: '虚线',
+    dotted: '点线',
+    double: '双线',
+    none: '无',
+    mapsto: '映至',
+    hook: '单射钩',
+    arrow: '箭头',
+    twohead: '双箭头',
+  };
+  return language === 'zh' ? (chinese[value] ?? fallback) : fallback;
+}
+
+function arrowStyleSummary(arrow: DiagramArrow, language: UiLanguage) {
   const stroke = arrowStrokeOptions.find(
     (option) => option.value === arrow.stroke,
-  )?.label;
-  const tail = arrowTailOptions.find(
-    (option) => option.value === arrow.tail,
-  )?.label;
-  const head = arrowHeadOptions.find(
-    (option) => option.value === arrow.head,
-  )?.label;
-  return [tail === 'Plain' ? null : tail, stroke, head]
+  );
+  const tail = arrowTailOptions.find((option) => option.value === arrow.tail);
+  const head = arrowHeadOptions.find((option) => option.value === arrow.head);
+  return [
+    tail?.value === 'none'
+      ? null
+      : tail && optionLabel(language, tail.value, tail.label),
+    stroke && optionLabel(language, stroke.value, stroke.label),
+    head && optionLabel(language, head.value, head.label),
+  ]
     .filter(Boolean)
     .join(' · ');
 }
@@ -142,6 +160,7 @@ export function ArrowStylePopover({
   align?: 'start' | 'center' | 'end';
   sideOffset?: number;
 }) {
+  const language = useUiLanguage();
   return (
     <Popover>
       <PopoverTrigger
@@ -149,8 +168,12 @@ export function ArrowStylePopover({
           <Button
             variant="outline"
             size={compact ? 'sm' : 'default'}
-            aria-label="Open arrow style menu"
-            title="Arrow style"
+            aria-label={ui(
+              language,
+              '打开箭头样式菜单',
+              'Open arrow style menu',
+            )}
+            title={ui(language, '箭头样式', 'Arrow style')}
             className={cn(
               compact
                 ? 'h-8 min-w-28 flex-1 justify-between gap-1.5 rounded-lg bg-background px-2 shadow-none'
@@ -179,7 +202,7 @@ export function ArrowStylePopover({
                 className="size-auto h-7 w-full max-w-40"
               />
               <span className="block truncate text-[10px] text-muted-foreground">
-                {arrowStyleSummary(arrow)}
+                {arrowStyleSummary(arrow, language)}
               </span>
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -194,25 +217,31 @@ export function ArrowStylePopover({
       >
         <PopoverHeader>
           <div className="flex items-center gap-2">
-            <PopoverTitle>1-cell style</PopoverTitle>
+            <PopoverTitle>
+              {ui(language, '一胞腔样式', '1-cell style')}
+            </PopoverTitle>
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-600">
-              Level 1
+              {ui(language, '层级 1', 'Level 1')}
             </span>
           </div>
           <PopoverDescription>
-            Body styling does not change this morphism into a 2-cell.
+            {ui(
+              language,
+              '改变线型不会把这个态射转换成二胞腔。',
+              'Body styling does not change this morphism into a 2-cell.',
+            )}
           </PopoverDescription>
         </PopoverHeader>
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Body
+            {ui(language, '线身', 'Body')}
           </p>
           <div className="grid grid-cols-4 gap-1.5">
             {arrowStrokeOptions.map((option) => (
               <ArrowStyleChoice
                 key={option.value}
-                label={option.label}
+                label={optionLabel(language, option.value, option.label)}
                 selected={arrow.stroke === option.value}
                 arrow={arrow}
                 patch={{ stroke: option.value }}
@@ -224,13 +253,13 @@ export function ArrowStylePopover({
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Tail
+            {ui(language, '箭尾', 'Tail')}
           </p>
           <div className="grid grid-cols-3 gap-1.5">
             {arrowTailOptions.map((option) => (
               <ArrowStyleChoice
                 key={option.value}
-                label={option.label}
+                label={optionLabel(language, option.value, option.label)}
                 selected={arrow.tail === option.value}
                 arrow={arrow}
                 patch={{ tail: option.value }}
@@ -242,13 +271,13 @@ export function ArrowStylePopover({
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Head
+            {ui(language, '箭头', 'Head')}
           </p>
           <div className="grid grid-cols-3 gap-1.5">
             {arrowHeadOptions.map((option) => (
               <ArrowStyleChoice
                 key={option.value}
-                label={option.label}
+                label={optionLabel(language, option.value, option.label)}
                 selected={arrow.head === option.value}
                 arrow={arrow}
                 patch={{ head: option.value }}

@@ -18,6 +18,7 @@ import {
   type CellStroke,
   type DiagramTwoCell,
 } from '@/lib/diagram';
+import { ui, useUiLanguage } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 function CellStylePreview({
@@ -136,6 +137,7 @@ export function CellStylePopover({
   align?: 'start' | 'center' | 'end';
   sideOffset?: number;
 }) {
+  const language = useUiLanguage();
   const stroke = resolvedCellStroke(cell);
   const head = resolvedCellHead(cell);
   const setStroke = (next: CellStroke) =>
@@ -156,8 +158,12 @@ export function CellStylePopover({
           <Button
             variant="outline"
             size={compact ? 'sm' : 'default'}
-            aria-label="Open 2-cell style menu"
-            title="2-cell style"
+            aria-label={ui(
+              language,
+              '打开二胞腔样式菜单',
+              'Open 2-cell style menu',
+            )}
+            title={ui(language, '二胞腔样式', '2-cell style')}
             className={cn(
               compact
                 ? 'h-8 min-w-28 flex-1 justify-between gap-1.5 rounded-lg bg-background px-2 shadow-none'
@@ -184,7 +190,28 @@ export function CellStylePopover({
                 className="h-7 w-full max-w-40"
               />
               <span className="block truncate text-[10px] text-muted-foreground">
-                Level 2 · {stroke} · {head === 'none' ? 'no head' : head}
+                {ui(language, '层级 2', 'Level 2')} ·{' '}
+                {ui(
+                  language,
+                  stroke === 'solid'
+                    ? '实线'
+                    : stroke === 'dashed'
+                      ? '虚线'
+                      : stroke === 'dotted'
+                        ? '点线'
+                        : '仅标签',
+                  stroke,
+                )}{' '}
+                ·{' '}
+                {ui(
+                  language,
+                  head === 'none'
+                    ? '无箭头'
+                    : head === 'reverse'
+                      ? '指向源'
+                      : '指向目标',
+                  head === 'none' ? 'no head' : head,
+                )}
               </span>
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -199,19 +226,25 @@ export function CellStylePopover({
       >
         <PopoverHeader>
           <div className="flex items-center gap-2">
-            <PopoverTitle>2-cell style</PopoverTitle>
+            <PopoverTitle>
+              {ui(language, '二胞腔样式', '2-cell style')}
+            </PopoverTitle>
             <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-indigo-700">
-              Level 2
+              {ui(language, '层级 2', 'Level 2')}
             </span>
           </div>
           <PopoverDescription>
-            A 2-cell keeps its higher boundary data while its glyph changes.
+            {ui(
+              language,
+              '改变图形样式时，二胞腔的高阶边界数据保持不变。',
+              'A 2-cell keeps its higher boundary data while its glyph changes.',
+            )}
           </PopoverDescription>
         </PopoverHeader>
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Double-line body
+            {ui(language, '双线线身', 'Double-line body')}
           </p>
           <div className="grid grid-cols-4 gap-1.5">
             {(['solid', 'dashed', 'dotted', 'none'] as const).map((value) => (
@@ -219,8 +252,12 @@ export function CellStylePopover({
                 key={value}
                 label={
                   value === 'none'
-                    ? 'Label only'
-                    : value[0].toUpperCase() + value.slice(1)
+                    ? ui(language, '仅标签', 'Label only')
+                    : value === 'solid'
+                      ? ui(language, '实线', 'Solid')
+                      : value === 'dashed'
+                        ? ui(language, '虚线', 'Dashed')
+                        : ui(language, '点线', 'Dotted')
                 }
                 selected={stroke === value}
                 stroke={value}
@@ -233,25 +270,25 @@ export function CellStylePopover({
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Direction
+            {ui(language, '方向', 'Direction')}
           </p>
           <div className="grid grid-cols-3 gap-1.5">
             <CellStyleChoice
-              label="To target"
+              label={ui(language, '指向目标', 'To target')}
               selected={head === 'arrow' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="arrow"
               onSelect={() => setHead('arrow')}
             />
             <CellStyleChoice
-              label="To source"
+              label={ui(language, '指向源', 'To source')}
               selected={head === 'reverse' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="reverse"
               onSelect={() => setHead('reverse')}
             />
             <CellStyleChoice
-              label="No head (=)"
+              label={ui(language, '无箭头（=）', 'No head (=)')}
               selected={head === 'none' && stroke !== 'none'}
               stroke={stroke === 'none' ? 'solid' : stroke}
               head="none"

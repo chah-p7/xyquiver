@@ -10,6 +10,7 @@ import {
 import katex from 'katex';
 
 import { FloatingCellEditor } from '@/components/floating-cell-editor';
+import { FloatingNodeEditor } from '@/components/floating-node-editor';
 import {
   areParallel,
   canPlaceNodes,
@@ -32,11 +33,13 @@ import {
   type CellAnchor,
   type DiagramArrow,
   type DiagramDocument,
+  type DiagramNode,
   type DiagramTwoCell,
   type NodeId,
   type Point,
   type Selection,
 } from '@/lib/diagram';
+import { ui, useUiLanguage } from '@/lib/i18n';
 
 export type EditorTool = 'select' | 'object' | 'arrow' | 'cell';
 export type ConnectionMode = 'auto' | 'arrow' | 'cell';
@@ -68,6 +71,7 @@ interface DiagramCanvasProps {
   ) => void;
   onMoveNodes: (positions: Record<NodeId, Point>) => void;
   onSetArrowCurve: (id: ArrowId, curve: number) => void;
+  onPatchNode: (id: NodeId, patch: Partial<DiagramNode>) => void;
   onPatchArrow: (id: ArrowId, patch: Partial<DiagramArrow>) => void;
   onPatchCell: (id: string, patch: Partial<DiagramTwoCell>) => void;
   onChooseConnectionMode: (mode: ConnectionMode) => void;
@@ -131,6 +135,41 @@ function distance(left: Point, right: Point) {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function floatingPanelPosition(
+  anchor: Point,
+  width: number,
+  height: number,
+  avoid?: Point,
+) {
+  const gap = 38;
+  const candidates = [
+    { x: anchor.x - width / 2, y: anchor.y - height - gap },
+    { x: anchor.x - width / 2, y: anchor.y + gap },
+    { x: anchor.x + gap, y: anchor.y - height / 2 },
+    { x: anchor.x - width - gap, y: anchor.y - height / 2 },
+  ].map((candidate, preference) => {
+    const position = {
+      x: clamp(candidate.x, 12, SCENE_WIDTH - width - 12),
+      y: clamp(candidate.y, 12, SCENE_HEIGHT - height - 12),
+    };
+    const clampedDistance = Math.hypot(
+      position.x - candidate.x,
+      position.y - candidate.y,
+    );
+    const coversAvoid =
+      avoid &&
+      avoid.x >= position.x - 16 &&
+      avoid.x <= position.x + width + 16 &&
+      avoid.y >= position.y - 16 &&
+      avoid.y <= position.y + height + 16;
+    return {
+      ...position,
+      score: preference * 2 + clampedDistance + (coversAvoid ? 10_000 : 0),
+    };
+  });
+  return candidates.sort((left, right) => left.score - right.score)[0];
 }
 
 function offsetPath(path: ReturnType<typeof getArrowGeometry>, amount: number) {
@@ -234,6 +273,7 @@ function InlineLabelEditor({
   onCommit: (selection: Selection, label: string) => void;
   onCancel: () => void;
 }) {
+  const language = useUiLanguage();
   const anchor = labelAnchor(doc, selection);
   const [draft, setDraft] = useState(anchor?.label ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -263,7 +303,7 @@ function InlineLabelEditor({
       <div className="flex size-full items-center justify-center px-1">
         <input
           ref={inputRef}
-          aria-label="Edit LaTeX label"
+          aria-label={ui(language, '编辑 LaTeX 标签', 'Edit LaTeX label')}
           className="h-9 w-full rounded-lg border border-[#8a4e75] bg-white/98 px-3 font-mono text-[13px] text-[#242430] shadow-[0_8px_30px_rgb(46_29_44/16%)] outline-none ring-3 ring-[#8a4e75]/12"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -496,6 +536,7 @@ export function DiagramCanvas({
   onQuickConnect,
   onMoveNodes,
   onSetArrowCurve,
+  onPatchNode,
   onPatchArrow,
   onPatchCell,
   onChooseConnectionMode,
@@ -504,6 +545,7 @@ export function DiagramCanvas({
   onCancelLabelEdit,
   onStatus,
 }: DiagramCanvasProps) {
+  const language = useUiLanguage();
   const svgRef = useRef<SVGSVGElement>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const selectedKeys = useMemo(
@@ -722,7 +764,15 @@ export function DiagramCanvas({
         connectionMode,
       );
       if (connectionError) {
-        onStatus(connectionError);
+        onStatus(
+          connectionError.startsWith('A 1-cell')
+            ? ui(
+                language,
+                '一胞腔的端点必须是对象；若要附着到箭头，请选择二胞腔。',
+                connectionError,
+              )
+            : ui(language, '请拖动到另一个锚点以创建连线。', connectionError),
+        );
         return;
       }
       onQuickConnect(completed.source, target, connectionMode);
@@ -732,7 +782,13 @@ export function DiagramCanvas({
       if (!completed.moved) return;
       if (completed.valid) onMoveNodes(completed.positions);
       else
-        onStatus('That move would overlap another object, so nothing moved.');
+        onStatus(
+          ui(
+            language,
+            '移动后会与另一个对象重叠，因此未作更改。',
+            'That move would overlap another object, so nothing moved.',
+          ),
+        );
       return;
     }
     if (completed.kind === 'curve') {
@@ -777,14 +833,20 @@ export function DiagramCanvas({
       className="absolute inset-0 size-full touch-none select-none"
       viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`}
       role="application"
-      aria-label="Direct manipulation categorical diagram canvas"
+      aria-label={ui(
+        language,
+        '可直接操作的范畴交换图画布',
+        'Direct manipulation categorical diagram canvas',
+      )}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={(event) => {
         if (gesture?.pointerId !== event.pointerId) return;
         release(event.pointerId);
         setGesture(null);
-        onStatus('Cancelled current gesture.');
+        onStatus(
+          ui(language, '已取消当前手势。', 'Cancelled current gesture.'),
+        );
       }}
       onLostPointerCapture={(event) => {
         if (gesture?.pointerId === event.pointerId) setGesture(null);
@@ -924,8 +986,7 @@ export function DiagramCanvas({
               y2={y}
               stroke="#5b5360"
               strokeWidth="1"
-              strokeDasharray="2 8"
-              opacity=".16"
+              opacity=".14"
             />
           ))}
           {grid.columns.map((x) => (
@@ -937,8 +998,7 @@ export function DiagramCanvas({
               y2={grid.rows.at(-1)}
               stroke="#5b5360"
               strokeWidth="1"
-              strokeDasharray="2 8"
-              opacity=".16"
+              opacity=".14"
             />
           ))}
           {grid.rows.flatMap((y) =>
@@ -1267,6 +1327,10 @@ export function DiagramCanvas({
                     onNodeAction(node.id);
                     return;
                   }
+                  if (tool === 'select' && selected) {
+                    beginMove(event, node.id);
+                    return;
+                  }
                   beginConnect(event, {
                     kind: 'node',
                     id: node.id,
@@ -1311,20 +1375,38 @@ export function DiagramCanvas({
                   <circle
                     cx={-metrics.width / 2 - 12}
                     cy="0"
-                    r="3.3"
+                    r="5"
                     fill="#8a4e75"
                     stroke="#fbfaf7"
                     strokeWidth="1.6"
-                    pointerEvents="none"
+                    pointerEvents="all"
+                    className="cursor-crosshair"
+                    onPointerDown={(event) => {
+                      if (tool === 'object') return;
+                      beginConnect(event, {
+                        kind: 'node',
+                        id: node.id,
+                        point: { x: node.x, y: node.y },
+                      });
+                    }}
                   />
                   <circle
                     cx={metrics.width / 2 + 12}
                     cy="0"
-                    r="3.3"
+                    r="5"
                     fill="#8a4e75"
                     stroke="#fbfaf7"
                     strokeWidth="1.6"
-                    pointerEvents="none"
+                    pointerEvents="all"
+                    className="cursor-crosshair"
+                    onPointerDown={(event) => {
+                      if (tool === 'object') return;
+                      beginConnect(event, {
+                        kind: 'node',
+                        id: node.id,
+                        point: { x: node.x, y: node.y },
+                      });
+                    }}
                   />
                 </>
               )}
@@ -1332,6 +1414,46 @@ export function DiagramCanvas({
           );
         })}
       </g>
+
+      {selections.length === 1 &&
+        selections[0].kind === 'node' &&
+        tool === 'select' &&
+        !editing &&
+        !gesture &&
+        (() => {
+          const node = previewDoc.nodes.find(
+            (item) => item.id === selections[0].id,
+          );
+          if (!node) return null;
+          const width = 330;
+          const height = 76;
+          const position = floatingPanelPosition(node, width, height);
+          return (
+            <foreignObject
+              x={position.x}
+              y={position.y}
+              width={width}
+              height={height}
+              overflow="visible"
+              pointerEvents="all"
+            >
+              <div
+                className="size-full"
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                <FloatingNodeEditor
+                  key={`${node.id}:${node.label}`}
+                  node={node}
+                  onCommitLabel={(label) =>
+                    onCommitLabel({ kind: 'node', id: node.id }, label)
+                  }
+                  onPatch={(patch) => onPatchNode(node.id, patch)}
+                />
+              </div>
+            </foreignObject>
+          );
+        })()}
 
       {selections.length === 1 &&
         selections[0].kind === 'arrow' &&
@@ -1392,18 +1514,16 @@ export function DiagramCanvas({
           if (!arrow || !geometry) return null;
           const width = 330;
           const height = 122;
-          const x = Math.min(
-            SCENE_WIDTH - width - 12,
-            Math.max(12, geometry.midpoint.x - width / 2),
-          );
-          const y = Math.min(
-            SCENE_HEIGHT - height - 12,
-            Math.max(12, geometry.midpoint.y - 158),
+          const position = floatingPanelPosition(
+            geometry.midpoint,
+            width,
+            height,
+            geometry.control,
           );
           return (
             <foreignObject
-              x={x}
-              y={y}
+              x={position.x}
+              y={position.y}
               width={width}
               height={height}
               overflow="visible"
@@ -1442,18 +1562,15 @@ export function DiagramCanvas({
           if (!cell || !geometry) return null;
           const width = 330;
           const height = 122;
-          const x = Math.min(
-            SCENE_WIDTH - width - 12,
-            Math.max(12, geometry.midpoint.x - width / 2),
-          );
-          const y = Math.min(
-            SCENE_HEIGHT - height - 12,
-            Math.max(12, geometry.midpoint.y - 158),
+          const position = floatingPanelPosition(
+            geometry.midpoint,
+            width,
+            height,
           );
           return (
             <foreignObject
-              x={x}
-              y={y}
+              x={position.x}
+              y={position.y}
               width={width}
               height={height}
               overflow="visible"
