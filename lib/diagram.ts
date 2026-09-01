@@ -2028,14 +2028,6 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     ],
     arrows: [
       arrow('a-rho2', 'n-c', 'n-cp', '\\rho_2', 180),
-      arrow('a-rho1', 'n-cp', 'n-c', '\\rho_1', -82, {
-        labelPosition: 0.25,
-        labelSide: 'left',
-      }),
-      arrow('a-rho1p', 'n-cp', 'n-c', "\\rho'_1", 82, {
-        labelPosition: 0.75,
-        labelSide: 'right',
-      }),
       arrow(
         'a-rho2p',
         'n-c',
@@ -2048,19 +2040,25 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     cells: [
       {
         id: 'c-rho-upper',
-        sourceArrow: 'a-rho1',
-        targetArrow: 'a-rho1p',
-        label: '',
+        sourceAnchor: { kind: 'arrow', id: 'a-rho2', t: 0.27 },
+        targetAnchor: { kind: 'arrow', id: 'a-rho2p', t: 0.27 },
+        sourcePath: ['a-rho2'],
+        targetPath: ['a-rho2p'],
+        label: "\\rho'_1",
+        labelPosition: 'left',
         color: '#273244',
-        curve: -70,
+        curve: 45,
       },
       {
         id: 'c-rho-lower',
-        sourceArrow: 'a-rho1',
-        targetArrow: 'a-rho1p',
-        label: '',
+        sourceAnchor: { kind: 'arrow', id: 'a-rho2', t: 0.73 },
+        targetAnchor: { kind: 'arrow', id: 'a-rho2p', t: 0.73 },
+        sourcePath: ['a-rho2'],
+        targetPath: ['a-rho2p'],
+        label: '\\rho_1',
+        labelPosition: 'right',
         color: '#273244',
-        curve: 70,
+        curve: -45,
       },
       {
         id: 'c-rho-three',
@@ -2069,6 +2067,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         sourcePath: [],
         targetPath: [],
         label: '\\rho_0',
+        labelPosition: 'top',
         color: '#273244',
         head: 'reverse',
       },
@@ -2243,6 +2242,94 @@ export function migrateLegacyHomotopyLayout(
         rows: [...compact.grid.rows],
       }
     : undefined;
+  return migrated;
+}
+
+/**
+ * The first deformation example accidentally encoded rho'_1 and rho_1 as
+ * vertex arrows from C'_i back to C. They are higher arrows between rho_2 and
+ * rho'_2, and rho_0 is in turn attached between those two higher arrows.
+ * Upgrade only that exact built-in structure so unrelated user diagrams are
+ * never rewritten.
+ */
+export function migrateLegacyParallelDeformation(
+  document: DiagramDocument,
+): DiagramDocument {
+  const outerUpper = document.arrows.find((arrow) => arrow.id === 'a-rho2');
+  const outerLower = document.arrows.find((arrow) => arrow.id === 'a-rho2p');
+  const legacyLeft = document.arrows.find((arrow) => arrow.id === 'a-rho1p');
+  const legacyRight = document.arrows.find((arrow) => arrow.id === 'a-rho1');
+  const leftCell = document.cells.find((cell) => cell.id === 'c-rho-upper');
+  const rightCell = document.cells.find((cell) => cell.id === 'c-rho-lower');
+  const higherCell = document.cells.find((cell) => cell.id === 'c-rho-three');
+  const isLegacyBuiltIn =
+    document.title === 'Parallel deformation arrows' &&
+    document.nodes.some((node) => node.id === 'n-c') &&
+    document.nodes.some((node) => node.id === 'n-cp') &&
+    outerUpper?.source === 'n-c' &&
+    outerUpper.target === 'n-cp' &&
+    outerLower?.source === 'n-c' &&
+    outerLower.target === 'n-cp' &&
+    legacyLeft?.source === 'n-cp' &&
+    legacyLeft.target === 'n-c' &&
+    legacyRight?.source === 'n-cp' &&
+    legacyRight.target === 'n-c' &&
+    Boolean(leftCell && rightCell && higherCell);
+  if (!isLegacyBuiltIn) return document;
+
+  const migrated = cloneDocument(document);
+  migrated.arrows = migrated.arrows.filter(
+    (arrow) => arrow.id !== 'a-rho1' && arrow.id !== 'a-rho1p',
+  );
+  migrated.cells = migrated.cells.map((cell) => {
+    if (cell.id === 'c-rho-upper') {
+      return {
+        id: cell.id,
+        sourceAnchor: { kind: 'arrow', id: 'a-rho2', t: 0.27 },
+        targetAnchor: { kind: 'arrow', id: 'a-rho2p', t: 0.27 },
+        sourcePath: ['a-rho2'],
+        targetPath: ['a-rho2p'],
+        label: legacyLeft?.label || "\\rho'_1",
+        labelPosition: 'left',
+        shaft: 'double',
+        color: cell.color,
+        curve: 45,
+        head: 'arrow',
+        stroke: 'solid',
+      };
+    }
+    if (cell.id === 'c-rho-lower') {
+      return {
+        id: cell.id,
+        sourceAnchor: { kind: 'arrow', id: 'a-rho2', t: 0.73 },
+        targetAnchor: { kind: 'arrow', id: 'a-rho2p', t: 0.73 },
+        sourcePath: ['a-rho2'],
+        targetPath: ['a-rho2p'],
+        label: legacyRight?.label || '\\rho_1',
+        labelPosition: 'right',
+        shaft: 'double',
+        color: cell.color,
+        curve: -45,
+        head: 'arrow',
+        stroke: 'solid',
+      };
+    }
+    if (cell.id === 'c-rho-three') {
+      return {
+        ...cell,
+        sourceAnchor: { kind: 'cell', id: 'c-rho-upper' },
+        targetAnchor: { kind: 'cell', id: 'c-rho-lower' },
+        sourcePath: [],
+        targetPath: [],
+        labelPosition: 'top',
+        shaft: 'double',
+        curve: 0,
+        head: 'reverse',
+        stroke: 'solid',
+      };
+    }
+    return cell;
+  });
   return migrated;
 }
 

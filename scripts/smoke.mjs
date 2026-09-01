@@ -14,6 +14,7 @@ import {
   isNativeParallelCell,
   matrixCellEdges,
   migrateLegacyHomotopyLayout,
+  migrateLegacyParallelDeformation,
   nodeLabelWidth,
   nodeMetrics,
   normalizeMathTex,
@@ -134,28 +135,17 @@ const incomingEndpoints = parallel.arrows
   .filter((arrow) => arrow.target === longTarget.id)
   .map((arrow) => getArrowGeometry(parallel, arrow)?.end)
   .filter(Boolean);
-const outgoingEndpoints = parallel.arrows
-  .filter((arrow) => arrow.source === longTarget.id)
-  .map((arrow) => getArrowGeometry(parallel, arrow)?.start)
-  .filter(Boolean);
 if (
   firstNodeTexAtom(longTarget.label) !== 'C' ||
   targetMetrics.width !== nodeMetrics(parallel.nodes[0]).width ||
   nodeLabelWidth(longTarget) <= targetMetrics.width ||
   incomingEndpoints.length !== 2 ||
-  outgoingEndpoints.length !== 2 ||
   new Set(
     incomingEndpoints.map(
       (point) => `${Math.round(point.x)}:${Math.round(point.y)}`,
     ),
   ).size !== 1 ||
-  new Set(
-    outgoingEndpoints.map(
-      (point) => `${Math.round(point.x)}:${Math.round(point.y)}`,
-    ),
-  ).size !== 1 ||
-  incomingEndpoints[0].x >= longTarget.x ||
-  outgoingEndpoints[0].x >= longTarget.x
+  incomingEndpoints[0].x >= longTarget.x
 ) {
   throw new Error(
     'label clearance: arrows did not stop at the nearest glyph edge',
@@ -164,13 +154,20 @@ if (
 
 const rightApproach = JSON.parse(JSON.stringify(parallel));
 rightApproach.nodes.find((node) => node.id === 'n-c').x = 920;
+rightApproach.arrows.push({
+  ...rightApproach.arrows[0],
+  id: 'a-source-clearance',
+  source: 'n-cp',
+  target: 'n-c',
+  curve: 0,
+});
 const fromRight = getArrowGeometry(
   rightApproach,
   rightApproach.arrows.find((arrow) => arrow.id === 'a-rho2'),
 );
 const toRight = getArrowGeometry(
   rightApproach,
-  rightApproach.arrows.find((arrow) => arrow.id === 'a-rho1'),
+  rightApproach.arrows.find((arrow) => arrow.id === 'a-source-clearance'),
 );
 if (
   !fromRight ||
@@ -185,21 +182,25 @@ if (
 
 const anchoredParallelXy = generateXyPic(parallel, 'snippet').text;
 if (
-  parallel.arrows.length !== 4 ||
+  parallel.arrows.length !== 2 ||
   parallel.arrows.some((arrow) => arrow.id === 'a-rho0') ||
-  parallel.arrows.find((arrow) => arrow.id === 'a-rho1')?.source !== 'n-cp' ||
-  parallel.arrows.find((arrow) => arrow.id === 'a-rho1p')?.source !== 'n-cp' ||
   parallel.cells.length !== 3 ||
   parallel.cells.some((cell) => cell.shaft && cell.shaft !== 'double') ||
-  !isNativeParallelCell(parallel, parallel.cells[0]) ||
-  !isNativeParallelCell(parallel, parallel.cells[1]) ||
+  parallel.cells[0].sourceAnchor?.kind !== 'arrow' ||
+  parallel.cells[0].sourceAnchor.t !== 0.27 ||
+  parallel.cells[1].sourceAnchor?.kind !== 'arrow' ||
+  parallel.cells[1].sourceAnchor.t !== 0.73 ||
+  parallel.cells[2].sourceAnchor?.kind !== 'cell' ||
+  parallel.cells[2].targetAnchor?.kind !== 'cell' ||
   !anchoredParallelXy.includes('@!0 @C=1.45pc @R=1.45pc') ||
   !anchoredParallelXy.includes("*![r]{C'_i=C+d\\rho_2=C+d\\rho'_2}") ||
   anchoredParallelXy.includes('\\rlap') ||
   anchoredParallelXy.includes('\\phantom') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  (anchoredParallelXy.match(/\\ar@\/[\^_]1\.09pc\/@\{=>\}/g) ?? []).length !==
-    2 ||
+  !anchoredParallelXy.includes('\\ar@/^0.7pc/@{=>}') ||
+  !anchoredParallelXy.includes('\\ar@/_0.7pc/@{=>}') ||
+  !anchoredParallelXy.includes('{\\rho\'_1}') ||
+  !anchoredParallelXy.includes('{\\rho_1}') ||
   !anchoredParallelXy.includes('\\ar@{<=}') ||
   !anchoredParallelXy.includes('{\\rho_0}')
 ) {
@@ -316,6 +317,56 @@ if (
   parallelRoundTrip.cells.some((cell) => cell.shaft !== 'double')
 ) {
   throw new Error('parallel attached arrows were lost');
+}
+
+const legacyParallel = JSON.parse(JSON.stringify(parallel));
+legacyParallel.arrows.splice(
+  1,
+  0,
+  {
+    ...legacyParallel.arrows[0],
+    id: 'a-rho1',
+    source: 'n-cp',
+    target: 'n-c',
+    label: '\\rho_1',
+    curve: -82,
+  },
+  {
+    ...legacyParallel.arrows[0],
+    id: 'a-rho1p',
+    source: 'n-cp',
+    target: 'n-c',
+    label: "\\rho'_1",
+    curve: 82,
+  },
+);
+legacyParallel.cells[0] = {
+  ...legacyParallel.cells[0],
+  sourceArrow: 'a-rho1',
+  targetArrow: 'a-rho1p',
+  sourceAnchor: undefined,
+  targetAnchor: undefined,
+  label: '',
+};
+legacyParallel.cells[1] = {
+  ...legacyParallel.cells[1],
+  sourceArrow: 'a-rho1',
+  targetArrow: 'a-rho1p',
+  sourceAnchor: undefined,
+  targetAnchor: undefined,
+  label: '',
+};
+const migratedParallel = migrateLegacyParallelDeformation(legacyParallel);
+if (
+  migratedParallel.arrows.length !== 2 ||
+  migratedParallel.arrows.some((arrow) =>
+    ['a-rho1', 'a-rho1p'].includes(arrow.id),
+  ) ||
+  migratedParallel.cells[0].label !== "\\rho'_1" ||
+  migratedParallel.cells[0].sourceAnchor?.kind !== 'arrow' ||
+  migratedParallel.cells[2].sourceAnchor?.kind !== 'cell'
+) {
+  throw new Error('parallel migration did not restore higher-arrow anchors');
 }
 
 const oldDraft = JSON.parse(JSON.stringify(homotopy));
