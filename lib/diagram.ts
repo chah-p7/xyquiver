@@ -31,6 +31,8 @@ export interface DiagramArrow {
   label: string;
   curve: number;
   labelSide: LabelSide;
+  /** Absolute Xy-pic label placement. Legacy documents may still use labelSide. */
+  labelPlacement?: CellLabelPosition;
   /** Optional position of the label along the arrow, from source to target. */
   labelPosition?: number;
   stroke: ArrowStroke;
@@ -364,14 +366,12 @@ export function matrixAxes(
   return { columns, rows };
 }
 
-// Xy-pic adds substantial built-in padding around every matrix entry. These
-// values are calibrated against the ink bounds of the KaTeX labels on the
-// editor canvas (not against their CSS line boxes). Xy-pic's horizontal and
-// vertical built-in paddings differ, so the pc additions below are different;
-// their resulting centre-to-centre steps are both about 1.44 math em. A square
-// editor cell therefore stays square after it becomes an Xy-pic matrix cell.
-const XY_COLUMN_GRID_UNIT_PC = 0.55;
-const XY_ROW_GRID_UNIT_PC = 0.45;
+// @!0 makes these the actual fixed Xy-pic centre-to-centre steps and ignores
+// entry dimensions. Equal values preserve the editor's square grid; 1.45pc is
+// roughly one and a half math em, so a cell is only a little wider than one
+// ordinary object glyph instead of growing with a long label.
+const XY_COLUMN_GRID_UNIT_PC = 1.45;
+const XY_ROW_GRID_UNIT_PC = 1.45;
 const XY_CURVE_UNIT_PC = 0.625;
 
 function filledLogicalAxis(values: number[]): number[] {
@@ -383,7 +383,9 @@ function filledLogicalAxis(values: number[]): number[] {
   const end = snap(points.at(-1)!);
   const filled: number[] = [];
   for (let value = start; value <= end; value += SNAP) filled.push(value);
-  return [...new Set([...filled, ...points])].sort((left, right) => left - right);
+  return [...new Set([...filled, ...points])].sort(
+    (left, right) => left - right,
+  );
 }
 
 /**
@@ -659,6 +661,34 @@ export function arrowPointAt(
   };
 }
 
+export function resolvedArrowLabelPosition(
+  arrow: DiagramArrow,
+): CellLabelPosition {
+  return (
+    arrow.labelPlacement ?? (arrow.labelSide === 'left' ? 'top' : 'bottom')
+  );
+}
+
+export function arrowLabelPoint(
+  geometry: ArrowGeometry,
+  arrow: DiagramArrow,
+  distance = 25,
+): Point {
+  const placed = arrowPointAt(geometry, arrow.labelPosition ?? 0.5);
+  if (arrow.labelPlacement) {
+    return cellLabelPoint(
+      { midpoint: placed.midpoint },
+      arrow.labelPlacement,
+      distance,
+    );
+  }
+  const side = arrow.labelSide === 'left' ? 1 : -1;
+  return {
+    x: placed.midpoint.x + placed.normal.x * distance * side,
+    y: placed.midpoint.y + placed.normal.y * distance * side,
+  };
+}
+
 export interface ArrowGridAnchor extends Point {
   t: number;
 }
@@ -876,12 +906,8 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
   }
   const chordDirection = normalize({ x: to.x - from.x, y: to.y - from.y });
   const start = {
-    x:
-      from.x +
-      chordDirection.x * (sourceAnchor.kind === 'node' ? 0 : 5),
-    y:
-      from.y +
-      chordDirection.y * (sourceAnchor.kind === 'node' ? 0 : 5),
+    x: from.x + chordDirection.x * (sourceAnchor.kind === 'node' ? 0 : 5),
+    y: from.y + chordDirection.y * (sourceAnchor.kind === 'node' ? 0 : 5),
   };
   const end = {
     x: to.x - chordDirection.x * (targetAnchor.kind === 'node' ? 0 : 5),
@@ -923,10 +949,7 @@ export function getCellGeometry(doc: DiagramDocument, cell: DiagramTwoCell) {
 }
 
 export function cellLabelPoint(
-  geometry: Pick<
-    NonNullable<ReturnType<typeof getCellGeometry>>,
-    'midpoint'
-  >,
+  geometry: Pick<NonNullable<ReturnType<typeof getCellGeometry>>, 'midpoint'>,
   position: CellLabelPosition,
   distance = 22,
 ): Point {
@@ -988,9 +1011,9 @@ export function isNativeParallelCell(
   const targetArrow = doc.arrows.find((arrow) => arrow.id === target.id);
   return Boolean(
     sourceArrow &&
-      targetArrow &&
-      areParallel(sourceArrow, targetArrow) &&
-      resolvedCellShaft(cell) === 'double',
+    targetArrow &&
+    areParallel(sourceArrow, targetArrow) &&
+    resolvedCellShaft(cell) === 'double',
   );
 }
 
@@ -1349,12 +1372,7 @@ export function generateSvg(
           ? `<path d="${shiftedPath(geometry, -2.6)}" ${common}${tail}/><path d="${shiftedPath(geometry, 2.6)}" ${common}${marker}/>`
           : `<path d="${geometry.path}" ${common}${tail}${marker}/>`;
       if (!arrow.label) return paths;
-      const side = arrow.labelSide === 'left' ? 1 : -1;
-      const labelGeometry = arrowPointAt(geometry, arrow.labelPosition ?? 0.5);
-      const label = {
-        x: labelGeometry.midpoint.x + labelGeometry.normal.x * 23 * side,
-        y: labelGeometry.midpoint.y + labelGeometry.normal.y * 23 * side,
-      };
+      const label = arrowLabelPoint(geometry, arrow, 23);
       return `${paths}<text x="${round(label.x)}" y="${round(label.y)}" text-anchor="middle" dominant-baseline="middle" font-family="Cambria Math, STIX Two Math, Times New Roman, serif" font-size="19" fill="${color}" stroke="#ffffff" stroke-width="5.5" paint-order="stroke fill">${xml(displayTex(arrow.label))}</text>`;
     })
     .join('');
@@ -1455,14 +1473,15 @@ function safeTex(value: string): string {
     .trim();
 }
 
-function anchoredNodeTex(value: string): string {
+function nativeNodeTex(value: string): string {
   const full = safeTex(value);
-  const first = firstNodeTexAtom(full);
-  if (!full || !first || full === first) return full || '{}';
-  // The matrix entry stays as wide as its first glyph, while the complete
-  // object is painted to the right. Keep \rlap in math mode: wrapping it in
-  // \hbox makes MathJax/XyJax emit an merror instead of a diagram.
-  return `\\rlap{${full}}\\phantom{${first}}`;
+  if (!full) return '{}';
+  // Native Xy-pic object syntax keeps the TeX reference point at the matrix
+  // centre instead of centring the complete label. Together with @!0 this
+  // makes the first glyph the grid anchor while the complete object remains
+  // the arrow target; long labels neither stretch the grid nor split into
+  // unrelated MathJax overlay boxes.
+  return `*![r]{${full}}`;
 }
 
 function hopFor(
@@ -1522,29 +1541,36 @@ function arrowXyCommand(
   );
   const labelPlace =
     Math.abs(labelPosition - 0.5) < 0.001 ? '' : `(${round(labelPosition)})`;
-  const label = arrow.label
-    ? `${arrow.labelSide === 'left' ? '^' : '_'}${labelPlace}{${safeTex(arrow.label)}}`
-    : '';
-  const visible = `\\ar${curve}${style}[${hop}]${label}`;
+  const relativeLabel =
+    arrow.label && !arrow.labelPlacement
+      ? `${arrow.labelSide === 'left' ? '^' : '_'}${labelPlace}{${safeTex(arrow.label)}}`
+      : '';
+  const visible = `\\ar${curve}${style}[${hop}]${relativeLabel}`;
+  const absoluteLabel =
+    arrow.label && arrow.labelPlacement
+      ? `\\ar${curve}@{}[${hop}]|${labelPlace || '(.5)'}*+${xyLabelOffset(arrow.labelPlacement)}{${safeTex(arrow.label)}}`
+      : '';
   // A | break placed on the visible arrow can erase a stretch of its shaft.
   // Name 2-cell attachment points on an invisible companion arrow instead.
   const namedAnchors = aliases
     .map(({ name, t }) => `\\ar${curve}@{}[${hop}]|(${round(t)})*{}="${name}"`)
     .join(' ');
-  return [visible, namedAnchors].filter(Boolean).join(' ');
+  return [visible, absoluteLabel, namedAnchors].filter(Boolean).join(' ');
+}
+
+function xyLabelOffset(position: CellLabelPosition): string {
+  return position === 'top'
+    ? '<0pt,-1.2em>'
+    : position === 'bottom'
+      ? '<0pt,1.2em>'
+      : position === 'left'
+        ? '<-1.2em,0pt>'
+        : '<1.2em,0pt>';
 }
 
 function cellXyLabel(cell: DiagramTwoCell): string {
   if (!cell.label) return '';
-  const position = resolvedCellLabelPosition(cell);
-  const offset =
-    position === 'top'
-      ? '<0pt,-1.2em>'
-      : position === 'bottom'
-        ? '<0pt,1.2em>'
-        : position === 'left'
-          ? '<-1.2em,0pt>'
-          : '<1.2em,0pt>';
+  const offset = xyLabelOffset(resolvedCellLabelPosition(cell));
   // Put the label on an invisible companion path. The visible shaft remains
   // continuous, while the absolute offset mirrors the editor's four-way
   // placement instead of depending on the arrow's direction.
@@ -1716,9 +1742,9 @@ export function generateXyPic(
       const target = cellTargetAnchor(cell);
       return Boolean(
         source &&
-          target &&
-          (source.kind !== 'cell' || cellAnchorAliases.has(source.id)) &&
-          (target.kind !== 'cell' || cellAnchorAliases.has(target.id)),
+        target &&
+        (source.kind !== 'cell' || cellAnchorAliases.has(source.id)) &&
+        (target.kind !== 'cell' || cellAnchorAliases.has(target.id)),
       );
     });
     if (readyIndex < 0) {
@@ -1788,9 +1814,7 @@ export function generateXyPic(
     }
     const usesCellAnchor =
       sourceAnchor.kind === 'cell' || targetAnchor.kind === 'cell';
-    const label = usesCellAnchor
-      ? cellXyInlineLabel(cell)
-      : cellXyLabel(cell);
+    const label = usesCellAnchor ? cellXyInlineLabel(cell) : cellXyLabel(cell);
     const curve =
       Math.abs(cell.curve ?? 0) < 1
         ? ''
@@ -1837,7 +1861,7 @@ export function generateXyPic(
           (candidate) => candidate.x === x && candidate.y === y,
         );
         if (!node) return '{}';
-        const label = node.ghost ? '{}' : anchoredNodeTex(node.label);
+        const label = node.ghost ? '{}' : nativeNodeTex(node.label);
         return [label, ...(commands.get(node.id) ?? [])]
           .filter(Boolean)
           .join(' ');
@@ -1851,7 +1875,7 @@ export function generateXyPic(
   // browser pixels; doing so makes Typora arrows huge compared with glyphs.
   const columnSpacing = XY_COLUMN_GRID_UNIT_PC;
   const rowSpacing = XY_ROW_GRID_UNIT_PC;
-  const core = `\\begin{xy}\n${initializer}\\xymatrix @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
+  const core = `\\begin{xy}\n${initializer}\\xymatrix @!0 @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
   return wrap(core);
 }
 
@@ -2211,7 +2235,7 @@ export function migrateLegacyHomotopyLayout(
   const migrated = cloneDocument(document);
   migrated.nodes = migrated.nodes.map((node) => ({
     ...node,
-    ...(positions.get(node.id) ?? {}),
+    ...positions.get(node.id),
   }));
   migrated.grid = compact.grid
     ? {
@@ -2278,6 +2302,10 @@ export function validateDocument(value: unknown): DiagramDocument | null {
           (item.labelPosition as number) < 0.05 ||
           (item.labelPosition as number) > 0.95)) ||
       !['left', 'right'].includes(item.labelSide as string) ||
+      (item.labelPlacement !== undefined &&
+        !['top', 'bottom', 'left', 'right'].includes(
+          item.labelPlacement as string,
+        )) ||
       !['solid', 'dashed', 'dotted', 'double'].includes(
         item.stroke as string,
       ) ||
@@ -2294,6 +2322,9 @@ export function validateDocument(value: unknown): DiagramDocument | null {
       label: item.label,
       curve: item.curve as number,
       labelSide: item.labelSide as LabelSide,
+      ...(item.labelPlacement === undefined
+        ? {}
+        : { labelPlacement: item.labelPlacement as CellLabelPosition }),
       ...(item.labelPosition === undefined
         ? {}
         : { labelPosition: item.labelPosition as number }),

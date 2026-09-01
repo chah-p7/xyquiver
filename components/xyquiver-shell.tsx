@@ -88,6 +88,7 @@ import {
   isNativeParallelCell,
   matrixAxes,
   migrateLegacyHomotopyLayout,
+  resolvedArrowLabelPosition,
   resolvedCellLabelPosition,
   resolveConnectionLevel,
   selectionKey,
@@ -164,14 +165,17 @@ function downloadText(text: string, filename: string, type: string) {
 function DraftInput({
   value,
   onCommit,
+  live = false,
   className,
+  onFocus,
   ...props
 }: Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange' | 'onBlur'> & {
   value: string;
   onCommit: (value: string) => void;
+  live?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const [focused, setFocused] = useState(false);
   const commit = () => {
     if (draft !== value) onCommit(draft);
   };
@@ -179,17 +183,31 @@ function DraftInput({
     <Input
       {...props}
       className={className}
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      value={focused ? draft : value}
+      onFocus={(event) => {
+        setFocused(true);
+        setDraft(value);
+        onFocus?.(event);
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        if (live && next !== value) onCommit(next);
+      }}
+      onBlur={() => {
+        if (!live) commit();
+        setFocused(false);
+        setDraft(value);
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
-          commit();
+          if (!live) commit();
           event.currentTarget.blur();
         }
         if (event.key === 'Escape') {
           setDraft(value);
+          setFocused(false);
           event.currentTarget.blur();
         }
       }}
@@ -298,6 +316,7 @@ function Inspector({
               id="node-label"
               value={node.label}
               onCommit={(label) => onPatchNode(node.id, { label })}
+              live
               className="font-mono"
             />
             <p className="truncate font-serif text-sm text-muted-foreground">
@@ -374,6 +393,7 @@ function Inspector({
               id="arrow-label"
               value={arrow.label}
               onCommit={(label) => onPatchArrow(arrow.id, { label })}
+              live
               className="font-mono"
             />
           </div>
@@ -403,22 +423,36 @@ function Inspector({
             />
           </div>
           <div className="space-y-2">
-            <Label>{ui(language, '标签位置', 'Label side')}</Label>
-            <div className="grid grid-cols-2 gap-1.5">
-              <Button
-                size="sm"
-                variant={arrow.labelSide === 'left' ? 'secondary' : 'outline'}
-                onClick={() => onPatchArrow(arrow.id, { labelSide: 'left' })}
-              >
-                {ui(language, '左侧 / 上方', 'Left / above')}
-              </Button>
-              <Button
-                size="sm"
-                variant={arrow.labelSide === 'right' ? 'secondary' : 'outline'}
-                onClick={() => onPatchArrow(arrow.id, { labelSide: 'right' })}
-              >
-                {ui(language, '右侧 / 下方', 'Right / below')}
-              </Button>
+            <Label>{ui(language, '标签位置', 'Label position')}</Label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(
+                [
+                  ['top', ArrowUp, ui(language, '上', 'Top')],
+                  ['bottom', ArrowDown, ui(language, '下', 'Bottom')],
+                  ['left', ArrowLeft, ui(language, '左', 'Left')],
+                  ['right', ArrowRight, ui(language, '右', 'Right')],
+                ] as const
+              ).map(([position, Icon, label]) => (
+                <Button
+                  key={position}
+                  size="sm"
+                  variant={
+                    resolvedArrowLabelPosition(arrow) === position
+                      ? 'secondary'
+                      : 'outline'
+                  }
+                  aria-label={label}
+                  title={label}
+                  onClick={() =>
+                    onPatchArrow(arrow.id, {
+                      labelPlacement: position as CellLabelPosition,
+                      labelSide: position === 'bottom' ? 'right' : 'left',
+                    })
+                  }
+                >
+                  <Icon className="size-3.5" />
+                </Button>
+              ))}
             </div>
           </div>
           <Button
@@ -448,6 +482,7 @@ function Inspector({
               id="cell-label"
               value={cell.label}
               onCommit={(label) => onPatchCell(cell.id, { label })}
+              live
               className="font-mono"
             />
           </div>
@@ -1206,7 +1241,8 @@ export function XyQuiverShell() {
         (item.kind === 'arrow' && level === 'arrow') ||
         (item.kind === 'cell' &&
           ((level === 'cell' &&
-            (doc.cells.find((cell) => cell.id === item.id)?.level ?? 2) === 2) ||
+            (doc.cells.find((cell) => cell.id === item.id)?.level ?? 2) ===
+              2) ||
             (level === 'three' &&
               doc.cells.find((cell) => cell.id === item.id)?.level === 3)))
       ) {
@@ -1566,10 +1602,7 @@ export function XyQuiverShell() {
           );
         });
         let cells = current.cells;
-        if (
-          siblings.length === 1 &&
-          Math.abs(siblings[0].curve ?? 0) < 1
-        ) {
+        if (siblings.length === 1 && Math.abs(siblings[0].curve ?? 0) < 1) {
           cells = cells.map((cell) =>
             cell.id === siblings[0].id ? { ...cell, curve: -45 } : cell,
           );
@@ -1683,7 +1716,6 @@ export function XyQuiverShell() {
                 ),
               },
       );
-      setEditing(null);
       setStatus(ui(language, 'LaTeX 标签已更新。', 'Updated LaTeX label.'));
     },
     [commit, language],
@@ -1750,8 +1782,8 @@ export function XyQuiverShell() {
           setStatus(
             ui(
               language,
-            '请为普通箭头选择两个不同的顶点锚点。',
-            'Choose two different vertex anchors for an ordinary arrow.',
+              '请为普通箭头选择两个不同的顶点锚点。',
+              'Choose two different vertex anchors for an ordinary arrow.',
             ),
           );
           return;
@@ -1912,16 +1944,13 @@ export function XyQuiverShell() {
           const existingTarget = cellTargetAnchor(cell);
           return Boolean(
             existingSource &&
-              existingTarget &&
-              sameAnchor(existingSource, sourceAnchor) &&
-              sameAnchor(existingTarget, targetAnchor),
+            existingTarget &&
+            sameAnchor(existingSource, sourceAnchor) &&
+            sameAnchor(existingTarget, targetAnchor),
           );
         });
         let cells = current.cells;
-        if (
-          siblings.length === 1 &&
-          Math.abs(siblings[0].curve ?? 0) < 1
-        ) {
+        if (siblings.length === 1 && Math.abs(siblings[0].curve ?? 0) < 1) {
           cells = cells.map((cell) =>
             cell.id === siblings[0].id ? { ...cell, curve: -45 } : cell,
           );
@@ -2183,8 +2212,7 @@ export function XyQuiverShell() {
               {grid.columns.length}×{grid.rows.length}{' '}
               {ui(language, '矩阵', 'matrix')} · {doc.nodes.length}{' '}
               {ui(language, '个对象', 'objects')} · {doc.arrows.length}{' '}
-              {ui(language, '条箭头', 'arrows')} ·{' '}
-              {doc.cells.length}{' '}
+              {ui(language, '条箭头', 'arrows')} · {doc.cells.length}{' '}
               {ui(language, '条附着箭头', 'attached arrows')}
             </span>
           </div>

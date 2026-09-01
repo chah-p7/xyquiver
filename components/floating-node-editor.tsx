@@ -47,21 +47,17 @@ export function FloatingNodeEditor({
   const language = useUiLanguage();
   const [draft, setDraft] = useState(node.label);
   const draftRef = useRef(node.label);
-  const skipBlurCommit = useRef(false);
+  const initialLabel = useRef(node.label);
   const { face } = splitLabelFace(draft);
   const updateDraft = (next: string) => {
     draftRef.current = next;
     setDraft(next);
     onPreviewLabel(next);
-  };
-  const commit = (next = draftRef.current) => {
-    onPreviewLabel(null);
     if (next !== node.label) onCommitLabel(next);
   };
   const chooseFace = (nextFace: LabelFace) => {
     const next = applyLabelFace(draftRef.current, nextFace);
     updateDraft(next);
-    commit(next);
   };
 
   return (
@@ -91,23 +87,15 @@ export function FloatingNodeEditor({
           placeholder="\\mathcal{C}"
           value={draft}
           onChange={(event) => updateDraft(event.target.value)}
-          onBlur={() => {
-            if (skipBlurCommit.current) {
-              skipBlurCommit.current = false;
-              return;
-            }
-            window.setTimeout(() => commit(), 0);
-          }}
+          onBlur={() => onPreviewLabel(null)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              skipBlurCommit.current = true;
-              commit();
               event.currentTarget.blur();
             } else if (event.key === 'Escape') {
-              skipBlurCommit.current = true;
-              draftRef.current = node.label;
-              setDraft(node.label);
+              draftRef.current = initialLabel.current;
+              setDraft(initialLabel.current);
+              onCommitLabel(initialLabel.current);
               onPreviewLabel(null);
               event.currentTarget.blur();
             }

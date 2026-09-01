@@ -15,7 +15,7 @@ import { FloatingNodeEditor } from '@/components/floating-node-editor';
 import {
   areParallel,
   arrowGridAnchors,
-  arrowPointAt,
+  arrowLabelPoint,
   cellLabelPoint,
   canPlaceNodes,
   constrainArrowCurve,
@@ -309,13 +309,8 @@ function labelAnchor(doc: DiagramDocument, selection: Selection) {
     const arrow = doc.arrows.find((item) => item.id === selection.id);
     const geometry = arrow ? getArrowGeometry(doc, arrow) : null;
     if (!arrow || !geometry) return null;
-    const labelGeometry = arrowPointAt(geometry, arrow.labelPosition ?? 0.5);
-    const side = arrow.labelSide === 'left' ? 1 : -1;
     return {
-      point: {
-        x: labelGeometry.midpoint.x + labelGeometry.normal.x * 25 * side,
-        y: labelGeometry.midpoint.y + labelGeometry.normal.y * 25 * side,
-      },
+      point: arrowLabelPoint(geometry, arrow),
       label: arrow.label,
     };
   }
@@ -323,10 +318,7 @@ function labelAnchor(doc: DiagramDocument, selection: Selection) {
   const geometry = cell ? getCellGeometry(doc, cell) : null;
   return cell && geometry
     ? {
-        point: cellLabelPoint(
-          geometry,
-          resolvedCellLabelPosition(cell),
-        ),
+        point: cellLabelPoint(geometry, resolvedCellLabelPosition(cell)),
         label: cell.label,
       }
     : null;
@@ -348,6 +340,7 @@ function InlineLabelEditor({
   const language = useUiLanguage();
   const anchor = labelAnchor(doc, selection);
   const [draft, setDraft] = useState(anchor?.label ?? '');
+  const initialLabel = useRef(anchor?.label ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
 
@@ -361,12 +354,12 @@ function InlineLabelEditor({
     anchor.point.y > SCENE_HEIGHT - 100
       ? anchor.point.y - 72
       : anchor.point.y + 28;
-  const finish = (commit: boolean) => {
+  const finish = (restore: boolean) => {
     if (finished.current) return;
     finished.current = true;
     onPreview(null);
-    if (commit) onCommit(selection, draft);
-    else onCancel();
+    if (restore) onCommit(selection, initialLabel.current);
+    onCancel();
   };
   return (
     <foreignObject
@@ -386,17 +379,18 @@ function InlineLabelEditor({
           onChange={(event) => {
             setDraft(event.target.value);
             onPreview(event.target.value);
+            onCommit(selection, event.target.value);
           }}
           onPointerDown={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
-          onBlur={() => finish(true)}
+          onBlur={() => finish(false)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              finish(true);
+              event.currentTarget.blur();
             } else if (event.key === 'Escape') {
               event.preventDefault();
-              finish(false);
+              finish(true);
             }
           }}
         />
@@ -1269,15 +1263,9 @@ export function DiagramCanvas({
               : arrow.tail === 'mapsto'
                 ? 'url(#xyq-canvas-mapsto)'
                 : undefined;
-          const side = arrow.labelSide === 'left' ? 1 : -1;
-          const labelGeometry = arrowPointAt(
-            geometry,
-            arrow.labelPosition ?? 0.5,
-          );
-          const labelX =
-            labelGeometry.midpoint.x + labelGeometry.normal.x * 25 * side;
-          const labelY =
-            labelGeometry.midpoint.y + labelGeometry.normal.y * 25 * side;
+          const labelPoint = arrowLabelPoint(geometry, arrow);
+          const labelX = labelPoint.x;
+          const labelY = labelPoint.y;
           return (
             <g
               key={arrow.id}
@@ -1454,26 +1442,27 @@ export function DiagramCanvas({
                 stroke={resolvedCellStroke(cell)}
                 shaft={resolvedCellShaft(cell)}
               />
-              {cell.label && (() => {
-                const point = cellLabelPoint(
-                  geometry,
-                  resolvedCellLabelPosition(cell),
-                );
-                return (
-                  <MathLabel
-                    tex={cell.label}
-                    x={point.x}
-                    y={point.y}
-                    width={Math.min(
-                      220,
-                      Math.max(52, displayTex(cell.label).length * 11 + 26),
-                    )}
-                    color="#273244"
-                    size={17}
-                    paper
-                  />
-                );
-              })()}
+              {cell.label &&
+                (() => {
+                  const point = cellLabelPoint(
+                    geometry,
+                    resolvedCellLabelPosition(cell),
+                  );
+                  return (
+                    <MathLabel
+                      tex={cell.label}
+                      x={point.x}
+                      y={point.y}
+                      width={Math.min(
+                        220,
+                        Math.max(52, displayTex(cell.label).length * 11 + 26),
+                      )}
+                      color="#273244"
+                      size={17}
+                      paper
+                    />
+                  );
+                })()}
             </g>
           );
         })}
@@ -1691,7 +1680,6 @@ export function DiagramCanvas({
                   key={node.id}
                   node={committedNode}
                   onCommitLabel={(label) => {
-                    setLiveLabel(null);
                     onCommitLabel({ kind: 'node', id: node.id }, label);
                   }}
                   onPreviewLabel={(label) =>
@@ -1838,7 +1826,6 @@ export function DiagramCanvas({
                   key={arrow.id}
                   item={{ kind: 'arrow', value: committedArrow }}
                   onCommitLabel={(label) => {
-                    setLiveLabel(null);
                     onCommitLabel({ kind: 'arrow', id: arrow.id }, label);
                   }}
                   onPreviewLabel={(label) =>
@@ -1897,7 +1884,6 @@ export function DiagramCanvas({
                   key={cell.id}
                   item={{ kind: 'cell', value: committedCell }}
                   onCommitLabel={(label) => {
-                    setLiveLabel(null);
                     onCommitLabel({ kind: 'cell', id: cell.id }, label);
                   }}
                   onPreviewLabel={(label) =>

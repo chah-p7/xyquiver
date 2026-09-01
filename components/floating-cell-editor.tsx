@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   normalizeMathTex,
+  resolvedArrowLabelPosition,
   resolvedCellLabelPosition,
   type CellLabelPosition,
   type DiagramArrow,
@@ -64,21 +65,17 @@ export function FloatingCellEditor({
       : ui(language, '附着箭头', 'ATTACHED ARROW');
   const [draft, setDraft] = useState(item.value.label);
   const draftRef = useRef(item.value.label);
-  const skipBlurCommit = useRef(false);
+  const initialLabel = useRef(item.value.label);
   const { face } = splitLabelFace(draft);
   const updateDraft = (next: string) => {
     draftRef.current = next;
     setDraft(next);
     onPreviewLabel(next);
-  };
-  const commit = (next = draftRef.current) => {
-    onPreviewLabel(null);
     if (next !== item.value.label) onCommitLabel(next);
   };
   const chooseFace = (nextFace: LabelFace) => {
     const next = applyLabelFace(draftRef.current, nextFace);
     updateDraft(next);
-    commit(next);
   };
 
   return (
@@ -108,23 +105,15 @@ export function FloatingCellEditor({
             placeholder="\\alpha_1"
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
-            onBlur={() => {
-              if (skipBlurCommit.current) {
-                skipBlurCommit.current = false;
-                return;
-              }
-              window.setTimeout(() => commit(), 0);
-            }}
+            onBlur={() => onPreviewLabel(null)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                skipBlurCommit.current = true;
-                commit();
                 event.currentTarget.blur();
               } else if (event.key === 'Escape') {
-                skipBlurCommit.current = true;
-                draftRef.current = item.value.label;
-                setDraft(item.value.label);
+                draftRef.current = initialLabel.current;
+                setDraft(initialLabel.current);
+                onCommitLabel(initialLabel.current);
                 onPreviewLabel(null);
                 event.currentTarget.blur();
               }
@@ -171,36 +160,41 @@ export function FloatingCellEditor({
           {item.kind === 'arrow' && onPatchArrow && (
             <div
               className="flex items-center gap-0.5"
-              aria-label={ui(language, '标签位置', 'Label side')}
+              aria-label={ui(language, '标签位置', 'Label position')}
             >
-              <Button
-                type="button"
-                size="xs"
-                variant={
-                  item.value.labelSide === 'left' ? 'secondary' : 'ghost'
-                }
-                aria-pressed={item.value.labelSide === 'left'}
-                title={ui(language, '标签置于上方或左侧', 'Label above / left')}
-                onClick={() => onPatchArrow({ labelSide: 'left' })}
-              >
-                {ui(language, '上方', 'Above')}
-              </Button>
-              <Button
-                type="button"
-                size="xs"
-                variant={
-                  item.value.labelSide === 'right' ? 'secondary' : 'ghost'
-                }
-                aria-pressed={item.value.labelSide === 'right'}
-                title={ui(
-                  language,
-                  '标签置于下方或右侧',
-                  'Label below / right',
-                )}
-                onClick={() => onPatchArrow({ labelSide: 'right' })}
-              >
-                {ui(language, '下方', 'Below')}
-              </Button>
+              {(
+                [
+                  ['top', ArrowUp, ui(language, '上方', 'Top')],
+                  ['bottom', ArrowDown, ui(language, '下方', 'Bottom')],
+                  ['left', ArrowLeft, ui(language, '左侧', 'Left')],
+                  ['right', ArrowRight, ui(language, '右侧', 'Right')],
+                ] as const
+              ).map(([position, Icon, title]) => (
+                <Button
+                  key={position}
+                  type="button"
+                  size="icon-xs"
+                  variant={
+                    resolvedArrowLabelPosition(item.value) === position
+                      ? 'secondary'
+                      : 'ghost'
+                  }
+                  aria-label={title}
+                  aria-pressed={
+                    resolvedArrowLabelPosition(item.value) === position
+                  }
+                  title={title}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() =>
+                    onPatchArrow({
+                      labelPlacement: position as CellLabelPosition,
+                      labelSide: position === 'bottom' ? 'right' : 'left',
+                    })
+                  }
+                >
+                  <Icon className="size-3.5" />
+                </Button>
+              ))}
             </div>
           )}
           {item.kind === 'cell' && onPatchCell && (

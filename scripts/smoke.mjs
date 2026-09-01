@@ -193,18 +193,33 @@ if (
   parallel.cells.some((cell) => cell.shaft && cell.shaft !== 'double') ||
   !isNativeParallelCell(parallel, parallel.cells[0]) ||
   !isNativeParallelCell(parallel, parallel.cells[1]) ||
-  !anchoredParallelXy.includes("\\rlap{C'_i=C+d\\rho_2") ||
-  !anchoredParallelXy.includes("=C+d\\rho'_2}\\phantom{C}") ||
-  anchoredParallelXy.includes('\\hbox{\\rlap') ||
+  !anchoredParallelXy.includes('@!0 @C=1.45pc @R=1.45pc') ||
+  !anchoredParallelXy.includes("*![r]{C'_i=C+d\\rho_2=C+d\\rho'_2}") ||
+  anchoredParallelXy.includes('\\rlap') ||
+  anchoredParallelXy.includes('\\phantom') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  (anchoredParallelXy.match(/\\ar@\/[\^_]1\.09pc\/@\{=>\}/g) ?? [])
-    .length !== 2 ||
+  (anchoredParallelXy.match(/\\ar@\/[\^_]1\.09pc\/@\{=>\}/g) ?? []).length !==
+    2 ||
   !anchoredParallelXy.includes('\\ar@{<=}') ||
   !anchoredParallelXy.includes('{\\rho_0}')
 ) {
   throw new Error(
     'parallel example: native boundaries or first-glyph anchoring regressed',
   );
+}
+
+const fourWayArrowLabels = JSON.parse(JSON.stringify(exampleDocuments.twocell));
+fourWayArrowLabels.arrows[0].labelPlacement = 'left';
+fourWayArrowLabels.arrows[1].labelPlacement = 'right';
+const fourWayXy = generateXyPic(fourWayArrowLabels, 'snippet').text;
+const fourWayRoundTrip = validateDocument(fourWayArrowLabels);
+if (
+  fourWayRoundTrip?.arrows[0].labelPlacement !== 'left' ||
+  fourWayRoundTrip?.arrows[1].labelPlacement !== 'right' ||
+  !fourWayXy.includes('@{}[rrrrrrrrrrrrrrr]|(.5)*+<-1.2em,0pt>{F}') ||
+  !fourWayXy.includes('@{}[rrrrrrrrrrrrrrr]|(.5)*+<1.2em,0pt>{G}')
+) {
+  throw new Error('arrow labels: Xy-pic four-way label placement regressed');
 }
 
 const nativeExample = exampleDocuments.twocell;
@@ -249,13 +264,9 @@ if (
   connectingMap.curve !== 180 ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@C=0.55pc @R=0.45pc') ||
-  !homotopyXy.includes(
-    `\\ar[${'r'.repeat(10)}]^{\\overset`,
-  ) ||
-  !homotopyXy.includes(
-    `\\ar@{}[${'r'.repeat(10)}]|(0.64)*{}="xyq-a1"`,
-  )
+  !homotopyXy.includes('@!0 @C=1.45pc @R=1.45pc') ||
+  !homotopyXy.includes(`\\ar[${'r'.repeat(10)}]^{\\overset`) ||
+  !homotopyXy.includes(`\\ar@{}[${'r'.repeat(10)}]|(0.64)*{}="xyq-a1"`)
 ) {
   throw new Error('snake lemma or logical Xy-pic alignment regressed');
 }
@@ -287,7 +298,9 @@ for (const [id, x, y] of [
 const migratedHomotopy = migrateLegacyHomotopyLayout(legacyWideHomotopy);
 if (
   migratedHomotopy.nodes.some((node) => {
-    const expected = homotopy.nodes.find((candidate) => candidate.id === node.id);
+    const expected = homotopy.nodes.find(
+      (candidate) => candidate.id === node.id,
+    );
     return !expected || node.x !== expected.x || node.y !== expected.y;
   })
 ) {
@@ -399,7 +412,9 @@ if (
   showcaseXy.includes('@{==>}') ||
   (showcaseXy.match(/@\{=>\}/g) ?? []).length !== 3
 ) {
-  throw new Error('attached-arrow export: double arrows were not native Xy paths');
+  throw new Error(
+    'attached-arrow export: double arrows were not native Xy paths',
+  );
 }
 if (
   quasi.cells[0].sourcePath?.length !== 2 ||
