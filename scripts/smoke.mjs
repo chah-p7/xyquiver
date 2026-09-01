@@ -13,6 +13,7 @@ import {
   generateXyPic,
   isNativeParallelCell,
   matrixCellEdges,
+  migrateLegacyHomotopyLayout,
   nodeLabelWidth,
   nodeMetrics,
   normalizeMathTex,
@@ -93,8 +94,8 @@ if (
 
 const topGridAnchors = arrowGridAnchors(homotopy, homotopy.arrows[0]);
 if (
-  ![280, 480, 680].every((x) =>
-    topGridAnchors.some((anchor) => anchor.x === x && anchor.y === 80),
+  ![360, 480, 600].every((x) =>
+    topGridAnchors.some((anchor) => anchor.x === x && anchor.y === 160),
   )
 ) {
   throw new Error(
@@ -248,12 +249,12 @@ if (
   connectingMap.curve !== 180 ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@C=0.55pc @R=0.3pc') ||
+  !homotopyXy.includes('@C=0.55pc @R=0.45pc') ||
   !homotopyXy.includes(
-    `\\ar[${'r'.repeat(20)}]^{\\overset`,
+    `\\ar[${'r'.repeat(10)}]^{\\overset`,
   ) ||
   !homotopyXy.includes(
-    `\\ar@{}[${'r'.repeat(20)}]|(0.64)*{}="xyq-a1"`,
+    `\\ar@{}[${'r'.repeat(10)}]|(0.64)*{}="xyq-a1"`,
   )
 ) {
   throw new Error('snake lemma or logical Xy-pic alignment regressed');
@@ -264,11 +265,33 @@ movedHomotopy.nodes.find((node) => node.id === 'n-xr').x -= 40;
 const movedHomotopyXy = generateXyPic(movedHomotopy, 'snippet').text;
 if (
   movedHomotopyXy === homotopyXy ||
-  !movedHomotopyXy.includes(`\\ar[${'r'.repeat(19)}]^{\\overset`)
+  !movedHomotopyXy.includes(`\\ar[${'r'.repeat(9)}]^{\\overset`)
 ) {
   throw new Error(
     'canvas/source mapping: moving one visual grid cell did not change one Xy-pic hop',
   );
+}
+
+const legacyWideHomotopy = JSON.parse(JSON.stringify(homotopy));
+for (const [id, x, y] of [
+  ['n-xl', 80, 80],
+  ['n-xr', 880, 80],
+  ['n-bp', 480, 320],
+  ['n-omega', 480, 560],
+]) {
+  Object.assign(
+    legacyWideHomotopy.nodes.find((node) => node.id === id),
+    { x, y },
+  );
+}
+const migratedHomotopy = migrateLegacyHomotopyLayout(legacyWideHomotopy);
+if (
+  migratedHomotopy.nodes.some((node) => {
+    const expected = homotopy.nodes.find((candidate) => candidate.id === node.id);
+    return !expected || node.x !== expected.x || node.y !== expected.y;
+  })
+) {
+  throw new Error('homotopy layout migration did not compact a saved example');
 }
 
 const parallelRoundTrip = validateDocument(

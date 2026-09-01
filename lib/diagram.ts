@@ -366,11 +366,12 @@ export function matrixAxes(
 
 // Xy-pic adds substantial built-in padding around every matrix entry. These
 // values are calibrated against the ink bounds of the KaTeX labels on the
-// editor canvas (not against their CSS line boxes): a twenty-cell horizontal
-// arrow is the same number of X-glyph widths in the canvas and XyJax SVG, and
-// the denser row step keeps diagonal arrows on the same visual scale.
+// editor canvas (not against their CSS line boxes). Xy-pic's horizontal and
+// vertical built-in paddings differ, so the pc additions below are different;
+// their resulting centre-to-centre steps are both about 1.44 math em. A square
+// editor cell therefore stays square after it becomes an Xy-pic matrix cell.
 const XY_COLUMN_GRID_UNIT_PC = 0.55;
-const XY_ROW_GRID_UNIT_PC = 0.3;
+const XY_ROW_GRID_UNIT_PC = 0.45;
 const XY_CURVE_UNIT_PC = 0.625;
 
 function filledLogicalAxis(values: number[]): number[] {
@@ -2054,14 +2055,14 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
     version: 2,
     title: 'Homotopy stabilization',
     grid: {
-      columns: [80, 280, 480, 680, 880],
-      rows: [80, 200, 320, 440, 560],
+      columns: [280, 360, 480, 600, 680],
+      rows: [160, 240, 320, 400, 440],
     },
     nodes: [
-      node('n-xl', 'X', 80, 80),
-      node('n-xr', 'X', 880, 80),
+      node('n-xl', 'X', 280, 160),
+      node('n-xr', 'X', 680, 160),
       node('n-bp', 'B^{p+1}(\\mathbb{R}/\\hbar\\mathbb{Z})_{conn}', 480, 320),
-      node('n-omega', '\\Omega^{p+2}_{cl}', 480, 560),
+      node('n-omega', '\\Omega^{p+2}_{cl}', 480, 440),
     ],
     arrows: [
       arrow(
@@ -2182,6 +2183,43 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
 
 export function cloneDocument(doc: DiagramDocument): DiagramDocument {
   return JSON.parse(JSON.stringify(doc)) as DiagramDocument;
+}
+
+/**
+ * The first public homotopy-stabilization example used a very wide 20×12-cell
+ * frame. Keep saved copies of that built-in diagram in sync with the compact,
+ * square-step layout without touching unrelated user diagrams.
+ */
+export function migrateLegacyHomotopyLayout(
+  document: DiagramDocument,
+): DiagramDocument {
+  const expectedNodeIds = ['n-xl', 'n-xr', 'n-bp', 'n-omega'];
+  const isBuiltInHomotopy =
+    document.title === 'Homotopy stabilization' &&
+    document.nodes.length === expectedNodeIds.length &&
+    document.arrows.length === 6 &&
+    document.cells.length === 1 &&
+    expectedNodeIds.every((id) =>
+      document.nodes.some((candidate) => candidate.id === id),
+    );
+  if (!isBuiltInHomotopy) return document;
+
+  const compact = exampleDocuments.homotopy;
+  const positions = new Map(
+    compact.nodes.map((node) => [node.id, { x: node.x, y: node.y }]),
+  );
+  const migrated = cloneDocument(document);
+  migrated.nodes = migrated.nodes.map((node) => ({
+    ...node,
+    ...(positions.get(node.id) ?? {}),
+  }));
+  migrated.grid = compact.grid
+    ? {
+        columns: [...compact.grid.columns],
+        rows: [...compact.grid.rows],
+      }
+    : undefined;
+  return migrated;
 }
 
 export function validateDocument(value: unknown): DiagramDocument | null {

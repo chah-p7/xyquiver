@@ -87,6 +87,7 @@ import {
   inferCellBoundaryPaths,
   isNativeParallelCell,
   matrixAxes,
+  migrateLegacyHomotopyLayout,
   resolvedCellLabelPosition,
   resolveConnectionLevel,
   selectionKey,
@@ -135,6 +136,8 @@ const examples = [
 
 const storageKey = 'xyquiver:document:v4';
 const snakeDeltaMigrationKey = 'xyquiver:migration:snake-delta-left:v1';
+const homotopyLayoutMigrationKey =
+  'xyquiver:migration:homotopy-compact-square:v1';
 const greekLabels = ['\\alpha', '\\beta', '\\gamma', '\\delta', '\\eta'];
 const arrowLabels = ['F', 'G', 'H', 'K', 'L', 'M'];
 
@@ -961,8 +964,12 @@ export function XyQuiverShell() {
     try {
       const stored = localStorage.getItem(storageKey);
       if (!stored) return;
-      const restored = validateDocument(JSON.parse(stored));
+      let restored = validateDocument(JSON.parse(stored));
       if (restored) {
+        if (!localStorage.getItem(homotopyLayoutMigrationKey)) {
+          restored = migrateLegacyHomotopyLayout(restored);
+          localStorage.setItem(homotopyLayoutMigrationKey, '1');
+        }
         if (!localStorage.getItem(snakeDeltaMigrationKey)) {
           const delta = restored.arrows.find(
             (arrow) =>
