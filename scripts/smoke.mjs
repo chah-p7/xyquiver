@@ -199,7 +199,7 @@ if (
   anchoredParallelXy.includes('\\xtwocell') ||
   !anchoredParallelXy.includes('\\ar@/^0.7pc/@{=>}') ||
   !anchoredParallelXy.includes('\\ar@/_0.7pc/@{=>}') ||
-  !anchoredParallelXy.includes('{\\rho\'_1}') ||
+  !anchoredParallelXy.includes("{\\rho'_1}") ||
   !anchoredParallelXy.includes('{\\rho_1}') ||
   !anchoredParallelXy.includes('\\ar@{<=}') ||
   !anchoredParallelXy.includes('{\\rho_0}')
@@ -459,12 +459,11 @@ if (
 const showcaseXy = generateXyPic(exampleDocuments.showcase, 'snippet').text;
 if (
   showcaseXy.includes('\\UseAllTwocells') ||
-  showcaseXy.includes('\\xtwocell') ||
   showcaseXy.includes('@{==>}') ||
-  (showcaseXy.match(/@\{=>\}/g) ?? []).length !== 3
+  (showcaseXy.match(/\\xtwocell/g) ?? []).length !== 3
 ) {
   throw new Error(
-    'attached-arrow export: double arrows were not native Xy paths',
+    'native 2-cell export: midpoint parallel cells did not use \\xtwocell',
   );
 }
 if (
@@ -545,6 +544,17 @@ if (
 const fullLatex = generateXyPic(quasi, 'latex').text;
 if (!fullLatex.includes('\\documentclass') || fullLatex.includes('\\[\n')) {
   throw new Error('latex export: invalid nested display wrapper');
+}
+const nativeTypora = generateXyPic(nativeExample, 'typora').text;
+const nativeLatex = generateXyPic(nativeExample, 'latex').text;
+if (
+  !nativeTypora.includes('\\xtwocell') ||
+  nativeTypora.includes('\\UseAllTwocells') ||
+  !nativeLatex.includes('\\UseAllTwocells\n\\xymatrix')
+) {
+  throw new Error(
+    'native 2-cell export: XyJax/LaTeX bootstrap modes regressed',
+  );
 }
 
 const styled = JSON.parse(JSON.stringify(exampleDocuments.quasicategory));

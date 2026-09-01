@@ -1013,7 +1013,17 @@ export function isNativeParallelCell(
     sourceArrow &&
     targetArrow &&
     areParallel(sourceArrow, targetArrow) &&
-    resolvedCellShaft(cell) === 'double',
+    resolvedCellShaft(cell) === 'double' &&
+    Math.abs(cell.curve ?? 0) < 1 &&
+    resolvedCellLabelPosition(cell) === 'top' &&
+    !sourceArrow.labelPlacement &&
+    !targetArrow.labelPlacement &&
+    sourceArrow.stroke === 'solid' &&
+    targetArrow.stroke === 'solid' &&
+    sourceArrow.head === 'arrow' &&
+    targetArrow.head === 'arrow' &&
+    sourceArrow.tail === 'none' &&
+    targetArrow.tail === 'none',
   );
 }
 
@@ -1558,19 +1568,20 @@ function arrowXyCommand(
   return [visible, absoluteLabel, namedAnchors].filter(Boolean).join(' ');
 }
 
-function xyLabelOffset(position: CellLabelPosition): string {
+function xyLabelOffset(position: CellLabelPosition, distanceEm = 1.2): string {
+  const distance = `${round(distanceEm)}em`;
   return position === 'top'
-    ? '<0pt,-1.2em>'
+    ? `<0pt,-${distance}>`
     : position === 'bottom'
-      ? '<0pt,1.2em>'
+      ? `<0pt,${distance}>`
       : position === 'left'
-        ? '<-1.2em,0pt>'
-        : '<1.2em,0pt>';
+        ? `<-${distance},0pt>`
+        : `<${distance},0pt>`;
 }
 
-function cellXyLabel(cell: DiagramTwoCell): string {
+function cellXyLabel(cell: DiagramTwoCell, distanceEm = 1.2): string {
   if (!cell.label) return '';
-  const offset = xyLabelOffset(resolvedCellLabelPosition(cell));
+  const offset = xyLabelOffset(resolvedCellLabelPosition(cell), distanceEm);
   // Put the label on an invisible companion path. The visible shaft remains
   // continuous, while the absolute offset mirrors the editor's four-way
   // placement instead of depending on the arrow's direction.
@@ -1609,7 +1620,6 @@ export function generateXyPic(
   const ys = axes.rows;
   const commands = new Map<NodeId, string[]>();
   const consumedArrows = new Set<ArrowId>();
-  let nativeCellCount = 0;
   const cellsUsedAsAnchors = new Set(
     doc.cells.flatMap((cell) => {
       const source = cellSourceAnchor(cell);
@@ -1619,10 +1629,14 @@ export function generateXyPic(
       );
     }),
   );
-  // XyJax renders \ar@{=>} natively, while its \xtwocell bootstrap macro is
-  // not consistently available and can leak red TeX text into exported SVGs.
-  // Use the same explicit double-arrow primitive for every attached arrow.
-  const nativeCellIds = new Set<CellId>();
+  // A true midpoint arrow-to-arrow cell maps exactly to Xy-pic's native
+  // 2-cell macro. Off-centre and higher attachments stay on named native Xy
+  // paths, since \xtwocell has no along-boundary attachment parameter.
+  const nativeCellIds = new Set<CellId>(
+    doc.cells
+      .filter((cell) => isNativeParallelCell(doc, cell))
+      .map((cell) => cell.id),
+  );
 
   for (const cell of doc.cells) {
     const sourceAnchor = cellSourceAnchor(cell);
@@ -1691,7 +1705,6 @@ export function generateXyPic(
     ]);
     consumedArrows.add(sourceArrow.id);
     consumedArrows.add(targetArrow.id);
-    nativeCellCount += 1;
   }
 
   const arrowAnchorAliases = new Map<
@@ -1814,7 +1827,11 @@ export function generateXyPic(
     }
     const usesCellAnchor =
       sourceAnchor.kind === 'cell' || targetAnchor.kind === 'cell';
-    const label = usesCellAnchor ? cellXyInlineLabel(cell) : cellXyLabel(cell);
+    const isArrowToArrow =
+      sourceAnchor.kind === 'arrow' && targetAnchor.kind === 'arrow';
+    const label = usesCellAnchor
+      ? cellXyInlineLabel(cell)
+      : cellXyLabel(cell, isArrowToArrow ? 1.65 : 1.2);
     const curve =
       Math.abs(cell.curve ?? 0) < 1
         ? ''
@@ -1868,7 +1885,11 @@ export function generateXyPic(
       })
       .join(' & '),
   );
-  const initializer = nativeCellCount > 0 ? '\\UseAllTwocells\n' : '';
+  // XyJax exposes \xtwocell directly; its bootstrap command is not defined
+  // and would be typeset as red text. A standalone LaTeX document does need
+  // the documented initialiser after loading xy's 2cell feature.
+  const initializer =
+    nativeCellIds.size > 0 && mode === 'latex' ? '\\UseAllTwocells\n' : '';
   const trailing =
     generalCellCommands.length > 0 ? `\n${generalCellCommands.join('\n')}` : '';
   // Xy-pic row/column spacing is typographic. It must not be inferred from
