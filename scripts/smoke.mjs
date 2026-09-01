@@ -248,7 +248,7 @@ if (
   connectingMap.curve !== 180 ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@C=0.75pc @R=0.5pc') ||
+  !homotopyXy.includes('@C=0.55pc @R=0.3pc') ||
   !homotopyXy.includes(
     `\\ar[${'r'.repeat(20)}]^{\\overset`,
   ) ||

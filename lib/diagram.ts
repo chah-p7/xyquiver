@@ -364,12 +364,13 @@ export function matrixAxes(
   return { columns, rows };
 }
 
-// Xy-pic adds different built-in horizontal and vertical padding around every
-// matrix entry. These calibrated additions make one empty logical cell about
-// 1.6 math em in either direction: a little wider than a glyph, without
-// letting long arrows dominate the object labels in Typora or exported SVG.
-const XY_COLUMN_GRID_UNIT_PC = 0.75;
-const XY_ROW_GRID_UNIT_PC = 0.5;
+// Xy-pic adds substantial built-in padding around every matrix entry. These
+// values are calibrated against the ink bounds of the KaTeX labels on the
+// editor canvas (not against their CSS line boxes): a twenty-cell horizontal
+// arrow is the same number of X-glyph widths in the canvas and XyJax SVG, and
+// the denser row step keeps diagonal arrows on the same visual scale.
+const XY_COLUMN_GRID_UNIT_PC = 0.55;
+const XY_ROW_GRID_UNIT_PC = 0.3;
 const XY_CURVE_UNIT_PC = 0.625;
 
 function filledLogicalAxis(values: number[]): number[] {
