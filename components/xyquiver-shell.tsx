@@ -83,10 +83,10 @@ import {
   deleteSelections,
   displayTex,
   exampleDocuments,
+  exportMatrixAxes,
   generateXyPic,
   inferCellBoundaryPaths,
   isNativeParallelCell,
-  matrixAxes,
   migrateLegacyHomotopyLayout,
   migrateLegacyParallelDeformation,
   resolvedArrowLabelPosition,
@@ -910,7 +910,9 @@ export function XyQuiverShell() {
   const importRef = useRef<HTMLInputElement>(null);
   const doc = history.present;
   const selection = selections.at(-1) ?? null;
-  const grid = useMemo(() => matrixAxes(doc, true), [doc]);
+  // Report the same filled logical grid that the Xy-pic exporter uses. Every
+  // visible 40 px snap centre crossed by a long arrow is one matrix position.
+  const grid = useMemo(() => exportMatrixAxes(doc), [doc]);
   const documentTitle = localizedDocumentTitle(doc.title, language);
   const visibleStatus =
     status ||

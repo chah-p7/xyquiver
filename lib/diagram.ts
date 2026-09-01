@@ -366,13 +366,13 @@ export function matrixAxes(
   return { columns, rows };
 }
 
-// @!0 makes these the actual fixed Xy-pic centre-to-centre steps and ignores
-// entry dimensions. Equal values preserve the editor's square grid; 1.45pc is
-// roughly one and a half math em, so a cell is only a little wider than one
-// ordinary object glyph instead of growing with a long label.
-const XY_COLUMN_GRID_UNIT_PC = 1.45;
-const XY_ROW_GRID_UNIT_PC = 1.45;
-const XY_CURVE_UNIT_PC = 0.625;
+// Keep both axes in the same em-relative unit: XyJax records @C/@R as the
+// actual logical coordinates when @!0 is active. One editor snap cell must
+// therefore become the same Xy-pic step in either direction. Using em also
+// keeps Typora and standalone LaTeX proportional when their base font changes.
+const XY_COLUMN_GRID_UNIT_EM = 1.45;
+const XY_ROW_GRID_UNIT_EM = 1.45;
+const XY_CURVE_UNIT_EM = 0.625;
 
 function filledLogicalAxis(values: number[]): number[] {
   const points = [...new Set(values)]
@@ -1528,8 +1528,8 @@ function arrowXyCommand(
     Math.abs(arrow.curve) < 8
       ? ''
       : arrow.curve > 0
-        ? `@/^${round((Math.abs(arrow.curve) / SNAP) * XY_CURVE_UNIT_PC)}pc/`
-        : `@/_${round((Math.abs(arrow.curve) / SNAP) * XY_CURVE_UNIT_PC)}pc/`;
+        ? `@/^${round((Math.abs(arrow.curve) / SNAP) * XY_CURVE_UNIT_EM)}em/`
+        : `@/_${round((Math.abs(arrow.curve) / SNAP) * XY_CURVE_UNIT_EM)}em/`;
   const isDefaultStyle =
     arrow.stroke === 'solid' && arrow.head === 'arrow' && arrow.tail === 'none';
   const tail =
@@ -1629,12 +1629,38 @@ export function generateXyPic(
       );
     }),
   );
+  const arrowCellDependents = new Map<ArrowId, Set<CellId>>();
+  for (const cell of doc.cells) {
+    for (const anchor of [cellSourceAnchor(cell), cellTargetAnchor(cell)]) {
+      if (anchor?.kind !== 'arrow') continue;
+      const dependents =
+        arrowCellDependents.get(anchor.id) ?? new Set<CellId>();
+      dependents.add(cell.id);
+      arrowCellDependents.set(anchor.id, dependents);
+    }
+  }
   // A true midpoint arrow-to-arrow cell maps exactly to Xy-pic's native
-  // 2-cell macro. Off-centre and higher attachments stay on named native Xy
-  // paths, since \xtwocell has no along-boundary attachment parameter.
+  // 2-cell macro only when it is an isolated leaf in the dependency graph.
+  // As in quiver's exporter, anything referenced by a higher edge must keep a
+  // zero-size named anchor. Multiple cells sharing the same boundaries also
+  // need independent named paths instead of overlapping \xtwocell macros.
   const nativeCellIds = new Set<CellId>(
     doc.cells
-      .filter((cell) => isNativeParallelCell(doc, cell))
+      .filter((cell) => {
+        if (
+          !isNativeParallelCell(doc, cell) ||
+          cellsUsedAsAnchors.has(cell.id)
+        ) {
+          return false;
+        }
+        const source = cellSourceAnchor(cell);
+        const target = cellTargetAnchor(cell);
+        return [source, target].every(
+          (anchor) =>
+            anchor?.kind === 'arrow' &&
+            arrowCellDependents.get(anchor.id)?.size === 1,
+        );
+      })
       .map((cell) => cell.id),
   );
 
@@ -1836,8 +1862,8 @@ export function generateXyPic(
       Math.abs(cell.curve ?? 0) < 1
         ? ''
         : (cell.curve ?? 0) > 0
-          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_PC)}pc/`
-          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_PC)}pc/`;
+          ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_EM)}em/`
+          : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_EM)}em/`;
     generalCellCommands.push(
       `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${usesCellAnchor ? label : ''}`,
     );
@@ -1892,11 +1918,9 @@ export function generateXyPic(
     nativeCellIds.size > 0 && mode === 'latex' ? '\\UseAllTwocells\n' : '';
   const trailing =
     generalCellCommands.length > 0 ? `\n${generalCellCommands.join('\n')}` : '';
-  // Xy-pic row/column spacing is typographic. It must not be inferred from
-  // browser pixels; doing so makes Typora arrows huge compared with glyphs.
-  const columnSpacing = XY_COLUMN_GRID_UNIT_PC;
-  const rowSpacing = XY_ROW_GRID_UNIT_PC;
-  const core = `\\begin{xy}\n${initializer}\\xymatrix @!0 @C=${columnSpacing}pc @R=${rowSpacing}pc {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
+  const columnSpacing = XY_COLUMN_GRID_UNIT_EM;
+  const rowSpacing = XY_ROW_GRID_UNIT_EM;
+  const core = `\\begin{xy}\n${initializer}\\xymatrix @!0 @C=${columnSpacing}em @R=${rowSpacing}em {\n  ${rows.join(' \\\\\n  ')}\n}${trailing}\n\\end{xy}`;
   return wrap(core);
 }
 

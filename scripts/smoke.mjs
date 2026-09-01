@@ -192,13 +192,13 @@ if (
   parallel.cells[1].sourceAnchor.t !== 0.73 ||
   parallel.cells[2].sourceAnchor?.kind !== 'cell' ||
   parallel.cells[2].targetAnchor?.kind !== 'cell' ||
-  !anchoredParallelXy.includes('@!0 @C=1.45pc @R=1.45pc') ||
+  !anchoredParallelXy.includes('@!0 @C=1.45em @R=1.45em') ||
   !anchoredParallelXy.includes("*![r]{C'_i=C+d\\rho_2=C+d\\rho'_2}") ||
   anchoredParallelXy.includes('\\rlap') ||
   anchoredParallelXy.includes('\\phantom') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  !anchoredParallelXy.includes('\\ar@/^0.7pc/@{=>}') ||
-  !anchoredParallelXy.includes('\\ar@/_0.7pc/@{=>}') ||
+  !anchoredParallelXy.includes('\\ar@/^0.7em/@{=>}') ||
+  !anchoredParallelXy.includes('\\ar@/_0.7em/@{=>}') ||
   !anchoredParallelXy.includes("{\\rho'_1}") ||
   !anchoredParallelXy.includes('{\\rho_1}') ||
   !anchoredParallelXy.includes('\\ar@{<=}') ||
@@ -265,7 +265,7 @@ if (
   connectingMap.curve !== 180 ||
   !cokerHorizontal ||
   cokerHorizontal.start.x > 372 ||
-  !homotopyXy.includes('@!0 @C=1.45pc @R=1.45pc') ||
+  !homotopyXy.includes('@!0 @C=1.45em @R=1.45em') ||
   !homotopyXy.includes(`\\ar[${'r'.repeat(10)}]^{\\overset`) ||
   !homotopyXy.includes(`\\ar@{}[${'r'.repeat(10)}]|(0.64)*{}="xyq-a1"`)
 ) {
@@ -464,6 +464,44 @@ if (
 ) {
   throw new Error(
     'native 2-cell export: midpoint parallel cells did not use \\xtwocell',
+  );
+}
+const duplicateNative = JSON.parse(JSON.stringify(nativeExample));
+duplicateNative.cells.push({
+  ...duplicateNative.cells[0],
+  id: 'c-beta',
+  label: '\\beta',
+});
+const duplicateNativeXy = generateXyPic(duplicateNative, 'snippet').text;
+if (
+  duplicateNativeXy.includes('\\xtwocell') ||
+  (duplicateNativeXy.match(/@\{=>\}/g) ?? []).length !== 2
+) {
+  throw new Error(
+    'parallel higher cells: shared boundaries collapsed into native shorthand',
+  );
+}
+const dependedNative = JSON.parse(JSON.stringify(nativeExample));
+dependedNative.cells.push({
+  id: 'c-beta',
+  sourceAnchor: { kind: 'cell', id: 'c-alpha' },
+  targetAnchor: { kind: 'node', id: 'n-b' },
+  sourcePath: [],
+  targetPath: [],
+  label: '\\beta',
+  color: '#273244',
+  shaft: 'double',
+  head: 'arrow',
+  stroke: 'solid',
+});
+const dependedNativeXy = generateXyPic(dependedNative, 'snippet').text;
+if (
+  dependedNativeXy.includes('\\xtwocell') ||
+  !dependedNativeXy.includes('="xyq-c1"') ||
+  !dependedNativeXy.includes('\\POS "xyq-c1"')
+) {
+  throw new Error(
+    'higher-cell dependency: native shorthand discarded a named cell anchor',
   );
 }
 if (
