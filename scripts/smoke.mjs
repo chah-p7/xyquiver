@@ -197,8 +197,8 @@ if (
   anchoredParallelXy.includes('\\rlap') ||
   anchoredParallelXy.includes('\\phantom') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  !anchoredParallelXy.includes('\\ar@2{->}@/_0.7em/') ||
-  !anchoredParallelXy.includes('\\ar@2{->}@/^0.7em/') ||
+  !anchoredParallelXy.includes('\\ar@2{->}@/_0.82em/') ||
+  !anchoredParallelXy.includes('\\ar@2{->}@/^0.82em/') ||
   !anchoredParallelXy.includes("{\\rho'_1}") ||
   !anchoredParallelXy.includes('{\\rho_1}') ||
   !anchoredParallelXy.includes('\\ar@2{<-}') ||
@@ -217,8 +217,8 @@ const fourWayRoundTrip = validateDocument(fourWayArrowLabels);
 if (
   fourWayRoundTrip?.arrows[0].labelPlacement !== 'left' ||
   fourWayRoundTrip?.arrows[1].labelPlacement !== 'right' ||
-  !fourWayXy.includes('@/^1.13em/@{}[rrrrrrrrrrrrrrr]|(.5)*+<-1.2em,0pt>{F}') ||
-  !fourWayXy.includes('@/_1.13em/@{}[rrrrrrrrrrrrrrr]|(.5)*+<1.2em,0pt>{G}')
+  !fourWayXy.includes('@/^1.31em/@{}[rrrrrrrrrrrrrrr]|(.5)*+<-1.2em,0pt>{F}') ||
+  !fourWayXy.includes('@/_1.31em/@{}[rrrrrrrrrrrrrrr]|(.5)*+<1.2em,0pt>{G}')
 ) {
   throw new Error('arrow labels: Xy-pic four-way label placement regressed');
 }
@@ -460,10 +460,13 @@ const showcaseXy = generateXyPic(exampleDocuments.showcase, 'snippet').text;
 if (
   showcaseXy.includes('\\UseAllTwocells') ||
   showcaseXy.includes('@{==>}') ||
-  (showcaseXy.match(/\\xtwocell/g) ?? []).length !== 3
+  showcaseXy.includes('\\xtwocell') ||
+  (showcaseXy.match(/@2\{->\}/g) ?? []).length !== 3 ||
+  !showcaseXy.includes('@/^1.74em/') ||
+  !showcaseXy.includes('@/_3.44em/')
 ) {
   throw new Error(
-    'native 2-cell export: midpoint parallel cells did not use \\xtwocell',
+    'native higher-arrow export: editable geometry was not preserved',
   );
 }
 const duplicateNative = JSON.parse(JSON.stringify(nativeExample));
@@ -586,12 +589,13 @@ if (!fullLatex.includes('\\documentclass') || fullLatex.includes('\\[\n')) {
 const nativeTypora = generateXyPic(nativeExample, 'typora').text;
 const nativeLatex = generateXyPic(nativeExample, 'latex').text;
 if (
-  !nativeTypora.includes('\\xtwocell') ||
+  nativeTypora.includes('\\xtwocell') ||
   nativeTypora.includes('\\UseAllTwocells') ||
-  !nativeLatex.includes('\\UseAllTwocells\n\\xymatrix')
+  nativeLatex.includes('\\UseAllTwocells') ||
+  !nativeLatex.includes('\\ar@2{->}')
 ) {
   throw new Error(
-    'native 2-cell export: XyJax/LaTeX bootstrap modes regressed',
+    'native higher-arrow export: XyJax/LaTeX modes regressed',
   );
 }
 
@@ -612,7 +616,7 @@ if (
   !styledSvg.includes('marker-start="url(#xyq-export-mapsto)"') ||
   !styledSvg.includes('stroke-dasharray="11 7"') ||
   !styledSvg.includes('stroke-dasharray="9 6"') ||
-  !styledXy.includes('@{^{(}-->>}@/^0.63em/') ||
+  !styledXy.includes('@{^{(}-->>}@/^0.73em/') ||
   !styledXy.includes('@{|=}') ||
   !styledXy.includes('\\ar@{-->}')
 ) {

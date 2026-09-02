@@ -372,7 +372,11 @@ export function matrixAxes(
 // keeps Typora and standalone LaTeX proportional when their base font changes.
 const XY_COLUMN_GRID_UNIT_EM = 1.45;
 const XY_ROW_GRID_UNIT_EM = 1.45;
-const XY_CURVE_UNIT_EM = 0.625;
+// The editor stores a quadratic Bézier control-point offset. At t=.5 that
+// moves the visible midpoint by half as much, whereas Xy-pic's @/^dimen/ and
+// @/_dimen/ express the visible bow directly. Convert through the same matrix
+// step used by @C/@R, including that exact one-half factor.
+const XY_CURVE_UNIT_EM = XY_COLUMN_GRID_UNIT_EM / 2;
 
 function filledLogicalAxis(values: number[]): number[] {
   const points = [...new Set(values)]
@@ -1634,40 +1638,12 @@ export function generateXyPic(
       );
     }),
   );
-  const arrowCellDependents = new Map<ArrowId, Set<CellId>>();
-  for (const cell of doc.cells) {
-    for (const anchor of [cellSourceAnchor(cell), cellTargetAnchor(cell)]) {
-      if (anchor?.kind !== 'arrow') continue;
-      const dependents =
-        arrowCellDependents.get(anchor.id) ?? new Set<CellId>();
-      dependents.add(cell.id);
-      arrowCellDependents.set(anchor.id, dependents);
-    }
-  }
-  // A true midpoint arrow-to-arrow cell maps exactly to Xy-pic's native
-  // 2-cell macro only when it is an isolated leaf in the dependency graph.
-  // As in quiver's exporter, anything referenced by a higher edge must keep a
-  // zero-size named anchor. Multiple cells sharing the same boundaries also
-  // need independent named paths instead of overlapping \xtwocell macros.
-  const nativeCellIds = new Set<CellId>(
-    doc.cells
-      .filter((cell) => {
-        if (
-          !isNativeParallelCell(doc, cell) ||
-          cellsUsedAsAnchors.has(cell.id)
-        ) {
-          return false;
-        }
-        const source = cellSourceAnchor(cell);
-        const target = cellTargetAnchor(cell);
-        return [source, target].every(
-          (anchor) =>
-            anchor?.kind === 'arrow' &&
-            arrowCellDependents.get(anchor.id)?.size === 1,
-        );
-      })
-      .map((cell) => cell.id),
-  );
+  // Always keep boundary arrows explicit. \xtwocell chooses its own fixed
+  // separation and curvature, so it cannot round-trip the geometry edited on
+  // the canvas. Named Xy-pic path positions plus an explicit @2{->} higher
+  // arrow are just as native, while preserving every endpoint, bend and label
+  // from the editor. This also gives all connection kinds one rendering rule.
+  const nativeCellIds = new Set<CellId>();
 
   for (const cell of doc.cells) {
     const sourceAnchor = cellSourceAnchor(cell);
