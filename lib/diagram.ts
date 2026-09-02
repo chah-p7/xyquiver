@@ -1555,15 +1555,20 @@ function arrowXyCommand(
     arrow.label && !arrow.labelPlacement
       ? `${arrow.labelSide === 'left' ? '^' : '_'}${labelPlace}{${safeTex(arrow.label)}}`
       : '';
-  const visible = `\\ar${curve}${style}[${hop}]${relativeLabel}`;
+  // Xy-pic requires the shaft/head decoration before the curve modifier.
+  const visible = `\\ar${style}${curve}[${hop}]${relativeLabel}`;
   const absoluteLabel =
     arrow.label && arrow.labelPlacement
       ? `\\ar${curve}@{}[${hop}]|${labelPlace || '(.5)'}*+${xyLabelOffset(arrow.labelPlacement)}{${safeTex(arrow.label)}}`
       : '';
   // A | break placed on the visible arrow can erase a stretch of its shaft.
   // Name 2-cell attachment points on an invisible companion arrow instead.
+  // The invisible A is intentionally non-empty: Xy-pic's double-arrow
+  // clipping needs a dimensioned endpoint, while *{} can erase the shafts.
   const namedAnchors = aliases
-    .map(({ name, t }) => `\\ar${curve}@{}[${hop}]|(${round(t)})*{}="${name}"`)
+    .map(
+      ({ name, t }) => `\\ar${curve}@{}[${hop}]|(${round(t)})*i{A}="${name}"`,
+    )
     .join(' ');
   return [visible, absoluteLabel, namedAnchors].filter(Boolean).join(' ');
 }
@@ -1826,10 +1831,10 @@ export function generateXyPic(
         : stroke === 'solid'
           ? shaft === 'double'
             ? direction === 'reverse'
-              ? '@{<=}'
+              ? '@2{<-}'
               : direction === 'none'
-                ? '@{=}'
-                : '@{=>}'
+                ? '@2{-}'
+                : '@2{->}'
             : direction === 'reverse'
               ? '@{<-}'
               : direction === 'none'
@@ -1865,7 +1870,7 @@ export function generateXyPic(
           ? `@/^${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_EM)}em/`
           : `@/_${round((Math.abs(cell.curve ?? 0) / SNAP) * XY_CURVE_UNIT_EM)}em/`;
     generalCellCommands.push(
-      `\\POS "${sourceAlias}" \\ar${curve}${style} "${targetAlias}"${usesCellAnchor ? label : ''}`,
+      `\\POS "${sourceAlias}" \\ar${style}${curve} "${targetAlias}"${usesCellAnchor ? label : ''}`,
     );
     if (label && !usesCellAnchor) {
       generalCellCommands.push(
@@ -1876,7 +1881,7 @@ export function generateXyPic(
       const alias = `xyq-c${++cellAnchorIndex}`;
       cellAnchorAliases.set(cell.id, alias);
       generalCellCommands.push(
-        `\\POS "${sourceAlias}" \\ar${curve}@{} "${targetAlias}"|(.5)*{}="${alias}"`,
+        `\\POS "${sourceAlias}" \\ar${curve}@{} "${targetAlias}"|(.5)*i{A}="${alias}"`,
       );
     }
   }
@@ -2092,7 +2097,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         label: "\\rho'_1",
         labelPosition: 'left',
         color: '#273244',
-        curve: 45,
+        curve: -45,
       },
       {
         id: 'c-rho-lower',
@@ -2103,7 +2108,7 @@ export const exampleDocuments: Record<string, DiagramDocument> = {
         label: '\\rho_1',
         labelPosition: 'right',
         color: '#273244',
-        curve: -45,
+        curve: 45,
       },
       {
         id: 'c-rho-three',
@@ -2338,7 +2343,7 @@ export function migrateLegacyParallelDeformation(
         labelPosition: 'left',
         shaft: 'double',
         color: cell.color,
-        curve: 45,
+        curve: -45,
         head: 'arrow',
         stroke: 'solid',
       };
@@ -2354,7 +2359,7 @@ export function migrateLegacyParallelDeformation(
         labelPosition: 'right',
         shaft: 'double',
         color: cell.color,
-        curve: -45,
+        curve: 45,
         head: 'arrow',
         stroke: 'solid',
       };

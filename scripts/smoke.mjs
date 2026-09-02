@@ -121,7 +121,7 @@ if (
   Math.abs(curvedCellGeometry.midpoint.x - curvedCellGeometry.baseMidpoint.x) <
     10 ||
   !curvedCellSvg.includes(' Q ') ||
-  !curvedCellXy.text.includes('\\ar@/^') ||
+  !curvedCellXy.text.includes('\\ar@2{->}@/^') ||
   curvedRoundTrip?.cells[0].curve !== 80
 ) {
   throw new Error('2-cell curvature: canvas, SVG, Xy-pic, or JSON regressed');
@@ -197,11 +197,11 @@ if (
   anchoredParallelXy.includes('\\rlap') ||
   anchoredParallelXy.includes('\\phantom') ||
   anchoredParallelXy.includes('\\xtwocell') ||
-  !anchoredParallelXy.includes('\\ar@/^0.7em/@{=>}') ||
-  !anchoredParallelXy.includes('\\ar@/_0.7em/@{=>}') ||
+  !anchoredParallelXy.includes('\\ar@2{->}@/_0.7em/') ||
+  !anchoredParallelXy.includes('\\ar@2{->}@/^0.7em/') ||
   !anchoredParallelXy.includes("{\\rho'_1}") ||
   !anchoredParallelXy.includes('{\\rho_1}') ||
-  !anchoredParallelXy.includes('\\ar@{<=}') ||
+  !anchoredParallelXy.includes('\\ar@2{<-}') ||
   !anchoredParallelXy.includes('{\\rho_0}')
 ) {
   throw new Error(
@@ -217,8 +217,8 @@ const fourWayRoundTrip = validateDocument(fourWayArrowLabels);
 if (
   fourWayRoundTrip?.arrows[0].labelPlacement !== 'left' ||
   fourWayRoundTrip?.arrows[1].labelPlacement !== 'right' ||
-  !fourWayXy.includes('@{}[rrrrrrrrrrrrrrr]|(.5)*+<-1.2em,0pt>{F}') ||
-  !fourWayXy.includes('@{}[rrrrrrrrrrrrrrr]|(.5)*+<1.2em,0pt>{G}')
+  !fourWayXy.includes('@/^1.13em/@{}[rrrrrrrrrrrrrrr]|(.5)*+<-1.2em,0pt>{F}') ||
+  !fourWayXy.includes('@/_1.13em/@{}[rrrrrrrrrrrrrrr]|(.5)*+<1.2em,0pt>{G}')
 ) {
   throw new Error('arrow labels: Xy-pic four-way label placement regressed');
 }
@@ -241,7 +241,7 @@ if (
   stabilizationCell.sourceAnchor?.kind !== 'arrow' ||
   stabilizationCell.targetAnchor?.kind !== 'node' ||
   stabilization.arrows.some((arrow) => arrow.stroke === 'double') ||
-  !stabilizationXy.includes('\\ar@{=>}')
+  !stabilizationXy.includes('\\ar@2{->}')
 ) {
   throw new Error(
     'homotopy example: stabilization was not exported as a native attached 2-cell',
@@ -267,7 +267,7 @@ if (
   cokerHorizontal.start.x > 372 ||
   !homotopyXy.includes('@!0 @C=1.45em @R=1.45em') ||
   !homotopyXy.includes(`\\ar[${'r'.repeat(10)}]^{\\overset`) ||
-  !homotopyXy.includes(`\\ar@{}[${'r'.repeat(10)}]|(0.64)*{}="xyq-a1"`)
+  !homotopyXy.includes(`\\ar@{}[${'r'.repeat(10)}]|(0.64)*i{A}="xyq-a1"`)
 ) {
   throw new Error('snake lemma or logical Xy-pic alignment regressed');
 }
@@ -413,9 +413,9 @@ for (const [id, document] of Object.entries(exampleDocuments)) {
 const quasi = exampleDocuments.quasicategory;
 const quasiXy = generateXyPic(quasi, 'snippet').text;
 if (
-  !quasiXy.includes('\\ar@{=>}') ||
+  !quasiXy.includes('\\ar@2{->}') ||
   !quasiXy.includes('|(.5)*+<0pt,-1.2em>{\\alpha}') ||
-  !quasiXy.includes('|(0.5)*{}="xyq-a1"') ||
+  !quasiXy.includes('|(0.5)*i{A}="xyq-a1"') ||
   !quasiXy.includes('\\POS "1,11"')
 ) {
   throw new Error(
@@ -441,7 +441,7 @@ const singleAttachedXy = generateXyPic(singleAttached, 'snippet').text;
 const singleAttachedRoundTrip = validateDocument(singleAttached);
 if (
   !singleAttachedXy.includes('\\ar@{->}') ||
-  singleAttachedXy.includes('\\ar@{=>}') ||
+  singleAttachedXy.includes('\\ar@2{->}') ||
   singleAttachedRoundTrip?.cells[0].shaft !== 'single'
 ) {
   throw new Error('attached-arrow style: single/double override regressed');
@@ -475,7 +475,7 @@ duplicateNative.cells.push({
 const duplicateNativeXy = generateXyPic(duplicateNative, 'snippet').text;
 if (
   duplicateNativeXy.includes('\\xtwocell') ||
-  (duplicateNativeXy.match(/@\{=>\}/g) ?? []).length !== 2
+  (duplicateNativeXy.match(/@2\{->\}/g) ?? []).length !== 2
 ) {
   throw new Error(
     'parallel higher cells: shared boundaries collapsed into native shorthand',
@@ -598,7 +598,7 @@ if (
 const styled = JSON.parse(JSON.stringify(exampleDocuments.quasicategory));
 Object.assign(
   styled.arrows.find((arrow) => arrow.id === 'q-f'),
-  { stroke: 'dashed', head: 'twohead', tail: 'hook' },
+  { stroke: 'dashed', head: 'twohead', tail: 'hook', curve: 40 },
 );
 Object.assign(
   styled.arrows.find((arrow) => arrow.id === 'q-h'),
@@ -612,7 +612,7 @@ if (
   !styledSvg.includes('marker-start="url(#xyq-export-mapsto)"') ||
   !styledSvg.includes('stroke-dasharray="11 7"') ||
   !styledSvg.includes('stroke-dasharray="9 6"') ||
-  !styledXy.includes('@{^{(}-->>}') ||
+  !styledXy.includes('@{^{(}-->>}@/^0.63em/') ||
   !styledXy.includes('@{|=}') ||
   !styledXy.includes('\\ar@{-->}')
 ) {
